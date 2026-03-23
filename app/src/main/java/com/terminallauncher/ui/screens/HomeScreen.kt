@@ -111,7 +111,8 @@ fun HomeScreen(
             LifeGrid(
                 birthYear = state.birthYear,
                 birthMonth = state.birthMonth,
-                alpha = if (state.terminalVisible) 0.08f else 1f
+                alpha = if (state.terminalVisible) 0.08f else 1f,
+                screenTimeMonths = state.screenTimeMonths
             )
         }
 

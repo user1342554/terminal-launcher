@@ -8,17 +8,17 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Color
 import com.terminallauncher.ui.theme.CopperLived
 import com.terminallauncher.ui.theme.DimRemaining
 import com.terminallauncher.ui.theme.GoldCurrent
+import com.terminallauncher.ui.theme.ScreenTimeWasted
 import java.util.Calendar
-import kotlin.math.floor
 
 private const val TOTAL_MONTHS = 960 // 80 years
 private const val GAP_RATIO = 0.18f
 private const val PADDING_H_RATIO = 0.05f
 private const val PADDING_V_RATIO = 0.06f
+private const val PADDING_TOP_RATIO = 0.22f // match lock screen for seamless unlock
 private const val CORNER_RADIUS_RATIO = 0.25f
 
 @Composable
@@ -26,7 +26,8 @@ fun LifeGrid(
     birthYear: Int,
     birthMonth: Int,
     modifier: Modifier = Modifier,
-    alpha: Float = 1f
+    alpha: Float = 1f,
+    screenTimeMonths: Int = 0
 ) {
     val now = remember {
         val cal = Calendar.getInstance()
@@ -43,11 +44,11 @@ fun LifeGrid(
         val canvasHeight = size.height
 
         val paddingH = canvasWidth * PADDING_H_RATIO
-        val paddingV = canvasHeight * PADDING_V_RATIO
+        val topPadding = canvasHeight * PADDING_TOP_RATIO
+        val bottomPadding = canvasHeight * PADDING_V_RATIO
         val availableWidth = canvasWidth - 2 * paddingH
-        val availableHeight = canvasHeight - 2 * paddingV
+        val availableHeight = canvasHeight - topPadding - bottomPadding
 
-        // Auto-optimize column count
         var bestColumns = 24
         var bestCellSize = 0f
 
@@ -70,12 +71,14 @@ fun LifeGrid(
         val gridWidth = bestColumns * cellSize + (bestColumns - 1) * gap
         val gridHeight = rows * cellSize + (rows - 1) * gap
         val offsetX = (canvasWidth - gridWidth) / 2f
-        val offsetY = (canvasHeight - gridHeight) / 2f
+        val offsetY = topPadding + (availableHeight - gridHeight) / 2f
 
         val cornerRadius = cellSize * CORNER_RADIUS_RATIO
-
-        // Opacity variations for lived months
         val opacityValues = floatArrayOf(0.82f, 0.84f, 0.85f, 0.86f, 0.87f, 0.88f, 0.89f, 0.9f, 0.91f)
+
+        // Screen time cells: the first N remaining cells after current month
+        val screenTimeStart = livedMonths + 1
+        val screenTimeEnd = (screenTimeStart + screenTimeMonths).coerceAtMost(TOTAL_MONTHS)
 
         for (i in 0 until TOTAL_MONTHS) {
             val col = i % bestColumns
@@ -89,6 +92,10 @@ fun LifeGrid(
                     CopperLived.copy(alpha = opacity * alpha)
                 }
                 i == livedMonths -> GoldCurrent.copy(alpha = alpha)
+                i in screenTimeStart until screenTimeEnd -> {
+                    val opacity = opacityValues[i % opacityValues.size]
+                    ScreenTimeWasted.copy(alpha = opacity * 0.7f * alpha)
+                }
                 else -> DimRemaining.copy(alpha = alpha)
             }
 
@@ -100,7 +107,7 @@ fun LifeGrid(
             )
         }
 
-        // Glow effect for current month
+        // Glow for current month
         if (livedMonths in 0 until TOTAL_MONTHS) {
             val col = livedMonths % bestColumns
             val row = livedMonths / bestColumns

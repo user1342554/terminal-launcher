@@ -10,6 +10,7 @@ val SurfaceOverlay = Color(0xF20A0A0F) // 95% alpha
 val CopperLived = Color(0xFFC9956B)
 val GoldCurrent = Color(0xFFE8B87D)
 val DimRemaining = Color(0xFF16161D)
+val ScreenTimeWasted = Color(0xFF8B3A3A) // muted red for screen time months
 
 val TextPrimary = Color(0xFFE8E0D8)
 val TextSecondary = Color(0x99E8E0D8) // 60% alpha

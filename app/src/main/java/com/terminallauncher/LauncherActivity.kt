@@ -27,6 +27,7 @@ class LauncherActivity : ComponentActivity() {
     private lateinit var devicePolicyManager: DevicePolicyManager
     private lateinit var adminComponent: ComponentName
 
+
     fun forceShowKeyboard() {
         window.decorView.post {
             window.insetsController?.show(WindowInsets.Type.ime())

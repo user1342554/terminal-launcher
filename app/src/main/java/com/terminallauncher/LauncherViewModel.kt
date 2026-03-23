@@ -13,7 +13,14 @@ import com.terminallauncher.data.SearchEngine
 import com.terminallauncher.data.SearchResult
 import com.terminallauncher.data.TerminalOutput
 import com.terminallauncher.data.UsageTracker
+import com.terminallauncher.data.WallpaperGenerator
+import com.terminallauncher.data.WallpaperUpdateWorker
+import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.PeriodicWorkRequestBuilder
+import androidx.work.WorkManager
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
@@ -44,7 +51,8 @@ data class LauncherState(
     val showAppPicker: String? = null,
     val settingsVisible: Boolean = false,
     val swipeLeftLabel: String? = null,
-    val swipeRightLabel: String? = null
+    val swipeRightLabel: String? = null,
+    val screenTimeMonths: Int = 0
 )
 
 class LauncherViewModel(application: Application) : AndroidViewModel(application) {
@@ -54,6 +62,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     private val searchEngine = SearchEngine()
     val usageTracker = UsageTracker(application)
     val commandProcessor = CommandProcessor(application)
+    private val wallpaperGenerator = WallpaperGenerator(application)
 
     private val _terminalVisible = MutableStateFlow(false)
     private val _searchQuery = MutableStateFlow("")
@@ -67,6 +76,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     init {
         appRepository.start()
         refreshScreenTime()
+        scheduleWallpaperUpdate()
 
         // Wire shortcut command to save the app
         commandProcessor.onShortcutChange = { direction, query ->
@@ -146,6 +156,8 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
                 }
             }
         }
+
+        commandProcessor.onWallpaperRefresh = { updateWallpaperNow() }
     }
 
     fun refreshScreenTime() {
@@ -179,6 +191,15 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
 
         val clampedIndex = if (results.isEmpty()) 0 else selectedIndex.coerceIn(0, results.size - 1)
 
+        // Calculate screen time months
+        val livedMonths = if (birthDate != null) {
+            val cal = java.util.Calendar.getInstance()
+            ((cal.get(java.util.Calendar.YEAR) - birthDate.year) * 12 +
+             (cal.get(java.util.Calendar.MONTH) + 1 - birthDate.month)).coerceIn(0, 960)
+        } else 0
+        val remaining = 960 - livedMonths
+        val stMonths = usageTracker.screenTimeMonths(remaining)
+
         LauncherState(
             screen = if (setupComplete) Screen.HOME else Screen.SETUP,
             birthYear = birthDate?.year,
@@ -193,6 +214,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
             currentPath = commandProcessor.currentPath,
             showAppPicker = showPicker,
             settingsVisible = settingsVisible,
+            screenTimeMonths = stMonths,
             swipeLeftLabel = null,
             swipeRightLabel = null
         )
@@ -213,6 +235,38 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     fun saveBirthDate(year: Int, month: Int) {
         viewModelScope.launch {
             preferencesStore.saveBirthDate(year, month)
+            // Set wallpaper in background
+            launch(Dispatchers.IO) {
+                val cal = java.util.Calendar.getInstance()
+                val lived = ((cal.get(java.util.Calendar.YEAR) - year) * 12 +
+                    (cal.get(java.util.Calendar.MONTH) + 1 - month)).coerceIn(0, 960)
+                val st = usageTracker.screenTimeMonths(960 - lived)
+                wallpaperGenerator.generateAndSetWallpaper(year, month, st)
+            }
+            // Schedule monthly wallpaper update
+            scheduleWallpaperUpdate()
+        }
+    }
+
+    private fun scheduleWallpaperUpdate() {
+        val request = PeriodicWorkRequestBuilder<WallpaperUpdateWorker>(
+            30, java.util.concurrent.TimeUnit.DAYS
+        ).build()
+        WorkManager.getInstance(getApplication()).enqueueUniquePeriodicWork(
+            "wallpaper_update",
+            ExistingPeriodicWorkPolicy.KEEP,
+            request
+        )
+    }
+
+    fun updateWallpaperNow() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val bd = preferencesStore.birthDate.first() ?: return@launch
+            val cal = java.util.Calendar.getInstance()
+            val lived = ((cal.get(java.util.Calendar.YEAR) - bd.year) * 12 +
+                (cal.get(java.util.Calendar.MONTH) + 1 - bd.month)).coerceIn(0, 960)
+            val stMonths = usageTracker.screenTimeMonths(960 - lived)
+            wallpaperGenerator.generateAndSetWallpaper(bd.year, bd.month, stMonths)
         }
     }
 

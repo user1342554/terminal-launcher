@@ -61,4 +61,27 @@ class UsageTracker(private val context: Context) {
         }
         return result
     }
+
+    /**
+     * Returns average daily screen time in hours over the last 7 days.
+     */
+    fun getDailyScreenTimeHours(): Float {
+        val screenTime = getScreenTime()
+        if (screenTime.isEmpty()) return 0f
+        val totalMs = screenTime.values.sum()
+        val totalHours = totalMs / (1000f * 60f * 60f)
+        return totalHours / 7f // average per day over 7 days
+    }
+
+    /**
+     * Given remaining months of life, calculates how many months
+     * will be spent on the phone at current usage rate.
+     */
+    fun screenTimeMonths(remainingMonths: Int): Int {
+        val dailyHours = getDailyScreenTimeHours()
+        if (dailyHours <= 0f) return 0
+        // fraction of each day on phone
+        val fraction = dailyHours / 24f
+        return (remainingMonths * fraction).toInt()
+    }
 }
