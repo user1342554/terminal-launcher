@@ -18,7 +18,7 @@ private const val TOTAL_MONTHS = 960 // 80 years
 private const val GAP_RATIO = 0.18f
 private const val PADDING_H_RATIO = 0.05f
 private const val PADDING_V_RATIO = 0.06f
-private const val PADDING_TOP_RATIO = 0.22f // match lock screen for seamless unlock
+private const val PADDING_TOP_RATIO = 0.06f // home position
 private const val CORNER_RADIUS_RATIO = 0.25f
 
 @Composable

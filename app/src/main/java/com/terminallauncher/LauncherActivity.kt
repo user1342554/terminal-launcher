@@ -28,6 +28,8 @@ class LauncherActivity : ComponentActivity() {
     private lateinit var adminComponent: ComponentName
 
 
+
+
     fun forceShowKeyboard() {
         window.decorView.post {
             window.insetsController?.show(WindowInsets.Type.ime())
@@ -65,6 +67,7 @@ class LauncherActivity : ComponentActivity() {
 
         devicePolicyManager = getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
         adminComponent = ComponentName(this, AdminReceiver::class.java)
+
 
         setContent {
             TerminalLauncherTheme {
