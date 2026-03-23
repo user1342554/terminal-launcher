@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- 2x2 grid of rounded squares like Memento icon -->
+    <path android:fillColor="#C9956B"
+        android:pathData="M30,30 L48,30 Q50,30 50,32 L50,48 Q50,50 48,50 L32,50 Q30,50 30,48 Z" />
+    <path android:fillColor="#C9956B"
+        android:pathData="M58,30 L76,30 Q78,30 78,32 L78,48 Q78,50 76,50 L60,50 Q58,50 58,48 Z" />
+    <path android:fillColor="#C9956B"
+        android:pathData="M30,58 L48,58 Q50,58 50,60 L50,76 Q50,78 48,78 L32,78 Q30,78 30,76 Z" />
+    <path android:fillColor="#E8B87D"
+        android:pathData="M58,58 L76,58 Q78,58 78,60 L78,76 Q78,78 76,78 L60,78 Q58,78 58,76 Z" />
+</vector>
