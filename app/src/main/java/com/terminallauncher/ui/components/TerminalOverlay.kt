@@ -1,6 +1,11 @@
 package com.terminallauncher.ui.components
 
 import android.view.WindowInsets
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -10,10 +15,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
@@ -21,12 +23,14 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.SpanStyle
@@ -35,8 +39,11 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.terminallauncher.HistoryEntry
 import com.terminallauncher.data.SearchResult
+import com.terminallauncher.data.TerminalOutput
 import com.terminallauncher.ui.theme.Background
+import com.terminallauncher.ui.theme.CopperLived
 import com.terminallauncher.ui.theme.Monospace
 import com.terminallauncher.ui.theme.SelectionBg
 import com.terminallauncher.ui.theme.TextDim
@@ -49,12 +56,17 @@ fun TerminalOverlay(
     query: String,
     results: List<SearchResult>,
     selectedIndex: Int,
+    isCommandMode: Boolean,
+    history: List<HistoryEntry>,
+    currentPath: String,
     onQueryChange: (String) -> Unit,
     onMoveUp: () -> Unit,
     onMoveDown: () -> Unit,
-    onLaunch: () -> Unit,
+    onSubmit: () -> Unit,
     onLaunchIndex: (Int) -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    onTabComplete: () -> Unit = {},
+    showAppPicker: Boolean = false
 ) {
     if (!visible) return
 
@@ -71,20 +83,67 @@ fun TerminalOverlay(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Background.copy(alpha = 0.85f))
-            .imePadding()
+            .background(Background.copy(alpha = 0.95f))
             .clickable(onClick = onDismiss)
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 20.dp)
+                .padding(horizontal = 16.dp)
                 .padding(top = 48.dp)
         ) {
+            // === HISTORY (above input, last 3 commands) ===
+            history.takeLast(3).forEach { entry ->
+                Text(
+                    text = buildAnnotatedString {
+                        withStyle(SpanStyle(color = CopperLived)) { append("$ ") }
+                        withStyle(SpanStyle(color = TextInput)) { append(entry.command) }
+                    },
+                    fontFamily = Monospace,
+                    fontSize = 14.sp,
+                    modifier = Modifier.padding(vertical = 2.dp)
+                )
+                entry.output.take(15).forEach { line ->
+                    when (line) {
+                        is TerminalOutput.TextLine -> Text(
+                            text = line.text,
+                            color = if (line.dim) TextDim else TextInput.copy(alpha = 0.8f),
+                            fontFamily = Monospace,
+                            fontSize = 13.sp,
+                            modifier = Modifier.padding(start = 8.dp, top = 1.dp, bottom = 1.dp)
+                        )
+                        is TerminalOutput.Error -> Text(
+                            text = line.text,
+                            color = Color(0xFFFF6B6B),
+                            fontFamily = Monospace,
+                            fontSize = 13.sp,
+                            modifier = Modifier.padding(start = 8.dp, top = 1.dp, bottom = 1.dp)
+                        )
+                        is TerminalOutput.SelectableItem -> Text(
+                            text = line.label,
+                            color = CopperLived,
+                            fontFamily = Monospace,
+                            fontSize = 13.sp,
+                            modifier = Modifier.padding(start = 8.dp, top = 1.dp, bottom = 1.dp)
+                        )
+                    }
+                }
+                Spacer(Modifier.height(4.dp))
+            }
+
+            // === INPUT LINE ===
+            // Blinking cursor
+            val blink = rememberInfiniteTransition(label = "cursor")
+            val cursorAlpha by blink.animateFloat(
+                initialValue = 1f, targetValue = 0f,
+                animationSpec = infiniteRepeatable(tween(530), RepeatMode.Reverse),
+                label = "cursorAlpha"
+            )
+
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     text = "$ ",
-                    color = TextPlaceholder,
+                    color = if (isCommandMode) CopperLived else TextPlaceholder,
                     fontFamily = Monospace,
                     fontSize = 16.sp
                 )
@@ -96,19 +155,19 @@ fun TerminalOverlay(
                         fontFamily = Monospace,
                         fontSize = 16.sp
                     ),
-                    cursorBrush = SolidColor(TextInput),
+                    cursorBrush = SolidColor(TextInput.copy(alpha = cursorAlpha)),
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
-                    keyboardActions = KeyboardActions(onGo = { onLaunch() }),
+                    keyboardActions = KeyboardActions(onGo = { onSubmit() }),
                     modifier = Modifier
-                        .fillMaxWidth()
+                        .weight(1f)
                         .focusRequester(focusRequester),
                     decorationBox = { innerTextField ->
                         Box {
                             if (query.isEmpty()) {
                                 Text(
-                                    text = "type to search...",
-                                    color = TextPlaceholder,
+                                    text = if (showAppPicker) "pick app for swipe shortcut..." else "search or command...",
+                                    color = if (showAppPicker) CopperLived.copy(alpha = 0.6f) else TextPlaceholder,
                                     fontFamily = Monospace,
                                     fontSize = 16.sp
                                 )
@@ -117,22 +176,44 @@ fun TerminalOverlay(
                         }
                     }
                 )
+                // Tab button
+                if (isCommandMode) {
+                    Text(
+                        text = "TAB",
+                        color = TextDim,
+                        fontFamily = Monospace,
+                        fontSize = 11.sp,
+                        modifier = Modifier
+                            .clickable(onClick = onTabComplete)
+                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                    )
+                }
             }
 
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(8.dp))
 
-            val display = results.take(5)
-            if (display.isNotEmpty()) {
-                display.forEachIndexed { index, result ->
+            // === SEARCH RESULTS (below input, growing down) ===
+            if (!isCommandMode && results.isNotEmpty()) {
+                results.take(5).forEachIndexed { index, result ->
                     ResultRow(result, index == selectedIndex) { onLaunchIndex(index) }
                 }
-            } else if (query.isNotEmpty()) {
+            } else if (!isCommandMode && query.isNotEmpty() && results.isEmpty()) {
                 Text(
                     text = "no results",
                     color = TextDim,
                     fontFamily = Monospace,
                     fontSize = 13.sp,
-                    modifier = Modifier.padding(vertical = 8.dp)
+                    modifier = Modifier.padding(vertical = 4.dp)
+                )
+            }
+
+            if (isCommandMode && query.isNotEmpty()) {
+                Text(
+                    text = "↵ run command",
+                    color = TextDim,
+                    fontFamily = Monospace,
+                    fontSize = 11.sp,
+                    modifier = Modifier.padding(top = 4.dp)
                 )
             }
         }

@@ -7,9 +7,11 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.terminallauncher.data.AppInfo
 import com.terminallauncher.data.AppRepository
+import com.terminallauncher.data.CommandProcessor
 import com.terminallauncher.data.PreferencesStore
 import com.terminallauncher.data.SearchEngine
 import com.terminallauncher.data.SearchResult
+import com.terminallauncher.data.TerminalOutput
 import com.terminallauncher.data.UsageTracker
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -22,6 +24,11 @@ enum class Screen {
     SETUP, HOME
 }
 
+data class HistoryEntry(
+    val command: String,
+    val output: List<TerminalOutput>
+)
+
 data class LauncherState(
     val screen: Screen = Screen.SETUP,
     val birthYear: Int? = null,
@@ -30,7 +37,14 @@ data class LauncherState(
     val searchQuery: String = "",
     val searchResults: List<SearchResult> = emptyList(),
     val selectedIndex: Int = 0,
-    val hasUsagePermission: Boolean = false
+    val hasUsagePermission: Boolean = false,
+    val isCommandMode: Boolean = false,
+    val history: List<HistoryEntry> = emptyList(),
+    val currentPath: String = "",
+    val showAppPicker: String? = null,
+    val settingsVisible: Boolean = false,
+    val swipeLeftLabel: String? = null,
+    val swipeRightLabel: String? = null
 )
 
 class LauncherViewModel(application: Application) : AndroidViewModel(application) {
@@ -39,15 +53,99 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     val appRepository = AppRepository(application)
     private val searchEngine = SearchEngine()
     val usageTracker = UsageTracker(application)
+    val commandProcessor = CommandProcessor(application)
 
     private val _terminalVisible = MutableStateFlow(false)
     private val _searchQuery = MutableStateFlow("")
     private val _selectedIndex = MutableStateFlow(0)
     private val _screenTime = MutableStateFlow<Map<String, Long>>(emptyMap())
+    private val _history = MutableStateFlow<List<HistoryEntry>>(emptyList())
+    private val _isCommandMode = MutableStateFlow(false)
+    private val _showAppPicker = MutableStateFlow<String?>(null) // null = hidden, "left" or "right" = which shortcut
+    private val _settingsVisible = MutableStateFlow(false)
 
     init {
         appRepository.start()
         refreshScreenTime()
+
+        // Wire shortcut command to save the app
+        commandProcessor.onShortcutChange = { direction, query ->
+            viewModelScope.launch {
+                val apps = appRepository.apps.value
+                val match = SearchEngine().search(query, apps).firstOrNull()
+                if (match != null) {
+                    val app = match.app
+                    if (direction == "right") {
+                        preferencesStore.saveSwipeRightApp(app.packageName, app.activityName, app.label)
+                    } else {
+                        preferencesStore.saveSwipeLeftApp(app.packageName, app.activityName, app.label)
+                    }
+                    _history.value = _history.value + HistoryEntry(
+                        "shortcut $direction $query",
+                        listOf(TerminalOutput.TextLine("set $direction shortcut → ${app.label}", dim = true))
+                    )
+                } else {
+                    _history.value = _history.value + HistoryEntry(
+                        "shortcut $direction $query",
+                        listOf(TerminalOutput.Error("no app found for '$query'"))
+                    )
+                }
+            }
+        }
+
+        // Wire app info command
+        commandProcessor.onAppInfo = { query ->
+            viewModelScope.launch {
+                val apps = appRepository.apps.value
+                val match = SearchEngine().search(query, apps).firstOrNull()
+                if (match != null) {
+                    try {
+                        val intent = Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                            data = android.net.Uri.parse("package:${match.app.packageName}")
+                            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                        }
+                        getApplication<Application>().startActivity(intent)
+                    } catch (_: Exception) {
+                        _history.value = _history.value + HistoryEntry(
+                            "info $query",
+                            listOf(TerminalOutput.Error("can't open settings for '${match.app.label}'"))
+                        )
+                    }
+                } else {
+                    _history.value = _history.value + HistoryEntry(
+                        "info $query",
+                        listOf(TerminalOutput.Error("no app found for '$query'"))
+                    )
+                }
+            }
+        }
+
+        // Wire uninstall command
+        commandProcessor.onUninstall = { query ->
+            viewModelScope.launch {
+                val apps = appRepository.apps.value
+                val match = SearchEngine().search(query, apps).firstOrNull()
+                if (match != null) {
+                    try {
+                        val intent = Intent(Intent.ACTION_DELETE).apply {
+                            data = android.net.Uri.parse("package:${match.app.packageName}")
+                            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                        }
+                        getApplication<Application>().startActivity(intent)
+                    } catch (_: Exception) {
+                        _history.value = _history.value + HistoryEntry(
+                            "uninstall $query",
+                            listOf(TerminalOutput.Error("can't uninstall '${match.app.label}'"))
+                        )
+                    }
+                } else {
+                    _history.value = _history.value + HistoryEntry(
+                        "uninstall $query",
+                        listOf(TerminalOutput.Error("no app found for '$query'"))
+                    )
+                }
+            }
+        }
     }
 
     fun refreshScreenTime() {
@@ -57,11 +155,28 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     val state: StateFlow<LauncherState> = combine(
         combine(preferencesStore.birthDate, preferencesStore.setupComplete) { bd, sc -> bd to sc },
         appRepository.apps,
-        _terminalVisible,
+        combine(_terminalVisible, _settingsVisible) { tv, sv -> tv to sv },
         _searchQuery,
-        combine(_selectedIndex, _screenTime) { idx, st -> idx to st }
-    ) { (birthDate, setupComplete), apps, terminalVisible, query, (selectedIndex, screenTime) ->
-        val results = searchEngine.search(query, apps, screenTime)
+        combine(_selectedIndex, _screenTime, _history, _isCommandMode, _showAppPicker) { idx, st, hist, cmd, picker ->
+            listOf(idx, st, hist, cmd, picker)
+        }
+    ) { prefs, apps, visibility, query, extras ->
+        val (birthDate, setupComplete) = prefs
+        val (terminalVisible, settingsVisible) = visibility
+        @Suppress("UNCHECKED_CAST")
+        val selectedIndex = extras[0] as Int
+        @Suppress("UNCHECKED_CAST")
+        val screenTime = extras[1] as Map<String, Long>
+        @Suppress("UNCHECKED_CAST")
+        val history = extras[2] as List<HistoryEntry>
+        val isCmd = extras[3] as Boolean
+        val showPicker = extras[4] as String?
+
+        val commandMode = isCmd || commandProcessor.isCommand(query)
+
+        val results = if (commandMode) emptyList()
+        else searchEngine.search(query, apps, screenTime)
+
         val clampedIndex = if (results.isEmpty()) 0 else selectedIndex.coerceIn(0, results.size - 1)
 
         LauncherState(
@@ -72,7 +187,21 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
             searchQuery = query,
             searchResults = results,
             selectedIndex = clampedIndex,
-            hasUsagePermission = usageTracker.hasPermission()
+            hasUsagePermission = usageTracker.hasPermission(),
+            isCommandMode = commandMode,
+            history = history,
+            currentPath = commandProcessor.currentPath,
+            showAppPicker = showPicker,
+            settingsVisible = settingsVisible,
+            swipeLeftLabel = null,
+            swipeRightLabel = null
+        )
+    }.combine(
+        combine(preferencesStore.swipeLeftApp, preferencesStore.swipeRightApp) { left, right -> left to right }
+    ) { state, swipeApps ->
+        state.copy(
+            swipeLeftLabel = swipeApps.first?.label,
+            swipeRightLabel = swipeApps.second?.label
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), LauncherState())
 
@@ -99,17 +228,51 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         _terminalVisible.value = true
         _searchQuery.value = ""
         _selectedIndex.value = 0
+        _isCommandMode.value = false
     }
 
     fun hideTerminal() {
         _terminalVisible.value = false
         _searchQuery.value = ""
         _selectedIndex.value = 0
+        _isCommandMode.value = false
+        _history.value = emptyList()
     }
 
     fun updateQuery(query: String) {
         _searchQuery.value = query
         _selectedIndex.value = 0
+    }
+
+    fun tabComplete() {
+        val completed = commandProcessor.tabComplete(_searchQuery.value)
+        if (completed != null) {
+            _searchQuery.value = completed
+        }
+    }
+
+    fun executeCommand(): Boolean {
+        val input = _searchQuery.value.trim()
+        if (input.isEmpty()) return false
+
+        // Clear command
+        if (input.lowercase() == "clear") {
+            _history.value = emptyList()
+            _searchQuery.value = ""
+            _isCommandMode.value = false
+            return true
+        }
+
+        if (commandProcessor.isCommand(input)) {
+            val result = commandProcessor.execute(input)
+            _history.value = _history.value + HistoryEntry(input, result.output)
+            _searchQuery.value = ""
+            _isCommandMode.value = false
+            return true
+        }
+
+        // Not a command — try launching top app result
+        return launchSelected()
     }
 
     fun moveSelectionUp() {
@@ -138,6 +301,57 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
 
     fun requestUsagePermission() {
         usageTracker.openPermissionSettings()
+    }
+
+    fun clearHistory() {
+        _history.value = emptyList()
+    }
+
+    // Returns the saved shortcut app or null (picker needed)
+    suspend fun getSwipeApp(direction: String): PreferencesStore.SwipeApp? {
+        return if (direction == "right") preferencesStore.swipeRightAppCurrent()
+               else preferencesStore.swipeLeftAppCurrent()
+    }
+
+    fun showShortcutPicker(direction: String) {
+        _showAppPicker.value = direction
+        _terminalVisible.value = true
+        _searchQuery.value = ""
+    }
+
+    fun setShortcutApp(app: AppInfo) {
+        viewModelScope.launch {
+            val direction = _showAppPicker.value ?: return@launch
+            if (direction == "right") {
+                preferencesStore.saveSwipeRightApp(app.packageName, app.activityName, app.label)
+            } else {
+                preferencesStore.saveSwipeLeftApp(app.packageName, app.activityName, app.label)
+            }
+            _showAppPicker.value = null
+            _terminalVisible.value = false
+        }
+    }
+
+    fun showSettings() {
+        _settingsVisible.value = true
+    }
+
+    fun hideSettings() {
+        _settingsVisible.value = false
+    }
+
+    fun goToSetup() {
+        viewModelScope.launch {
+            // Re-enter setup to change birth date
+            preferencesStore.resetSetup()
+        }
+    }
+
+    fun resetAll() {
+        viewModelScope.launch {
+            preferencesStore.resetAll()
+            _settingsVisible.value = false
+        }
     }
 
     private fun launchApp(app: AppInfo): Boolean {
