@@ -144,30 +144,34 @@ class LauncherActivity : ComponentActivity() {
                                 .fillMaxSize()
                                 .background(Background)
                         ) {
-                            // Blurred album art behind everything
+                            // Blurred album art — fixed layer, fades with scroll
                             if (mediaState.albumArt != null) {
-                                Image(
-                                    bitmap = mediaState.albumArt!!.asImageBitmap(),
-                                    contentDescription = null,
-                                    modifier = Modifier
-                                        .fillMaxSize()
-                                        .then(
-                                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                                                Modifier.graphicsLayer {
-                                                    renderEffect = RenderEffect
-                                                        .createBlurEffect(100f, 100f, Shader.TileMode.CLAMP)
-                                                        .asComposeRenderEffect()
-                                                }
-                                            } else Modifier
-                                        ),
-                                    contentScale = ContentScale.Crop,
-                                    alpha = 0.3f
-                                )
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxSize()
-                                        .background(Background.copy(alpha = 0.5f))
-                                )
+                                val scrollPos = (pagerState.currentPage + pagerState.currentPageOffsetFraction).coerceIn(0f, 1f)
+                                val blurAlpha = 1f - scrollPos
+                                if (blurAlpha > 0.01f) {
+                                    Image(
+                                        bitmap = mediaState.albumArt!!.asImageBitmap(),
+                                        contentDescription = null,
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .then(
+                                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                                                    Modifier.graphicsLayer {
+                                                        renderEffect = RenderEffect
+                                                            .createBlurEffect(80f, 80f, Shader.TileMode.CLAMP)
+                                                            .asComposeRenderEffect()
+                                                    }
+                                                } else Modifier
+                                            ),
+                                        contentScale = ContentScale.Crop,
+                                        alpha = 0.35f * blurAlpha
+                                    )
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .background(Background.copy(alpha = 0.5f * blurAlpha))
+                                    )
+                                }
                             }
 
                             HorizontalPager(
@@ -225,6 +229,23 @@ class LauncherActivity : ComponentActivity() {
                                         },
                                         onToggleWallpaperLock = {
                                             viewModel.setWallpaperConfig(state.wallpaperHome, !state.wallpaperLock)
+                                        },
+                                        onSwipeDown = {
+                                            scope.launch {
+                                                val app = viewModel.getSwipeApp("down")
+                                                if (app != null) {
+                                                    try {
+                                                        val intent = android.content.Intent(android.content.Intent.ACTION_MAIN).apply {
+                                                            addCategory(android.content.Intent.CATEGORY_LAUNCHER)
+                                                            component = ComponentName(app.packageName, app.activityName)
+                                                            flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK or android.content.Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED
+                                                        }
+                                                        startActivity(intent)
+                                                    } catch (_: Exception) {}
+                                                } else {
+                                                    viewModel.showShortcutPicker("down")
+                                                }
+                                            }
                                         }
                                     )
                                 }
@@ -232,7 +253,6 @@ class LauncherActivity : ComponentActivity() {
 
                             // Animated page indicators — dynamic color
                             if (!state.terminalVisible && !state.settingsVisible) {
-                                val mediaState by com.terminallauncher.data.MediaState.nowPlaying.collectAsState()
                                 val defAccent = 0xFFC9956B.toInt()
                                 val indicatorColor = if (mediaState.title.isNotEmpty() && mediaState.colors.accent != defAccent)
                                     androidx.compose.ui.graphics.Color(mediaState.colors.accent)

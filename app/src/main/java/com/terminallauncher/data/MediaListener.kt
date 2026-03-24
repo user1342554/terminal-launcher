@@ -84,13 +84,16 @@ object MediaState {
     private var lastContext: Context? = null
 
     private fun updateFromMetadata(metadata: MediaMetadata) {
-        var art = metadata.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART)
-            ?: metadata.getBitmap(MediaMetadata.METADATA_KEY_ART)
+        val bmpArt = metadata.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART)
+        val bmpArt2 = metadata.getBitmap(MediaMetadata.METADATA_KEY_ART)
+        val uriArt = metadata.getString(MediaMetadata.METADATA_KEY_ALBUM_ART_URI)
+        val uriArt2 = metadata.getString(MediaMetadata.METADATA_KEY_ART_URI)
+        android.util.Log.d("MediaListener", "bmpArt=${bmpArt != null} bmpArt2=${bmpArt2 != null} uriArt=$uriArt uriArt2=$uriArt2")
 
-        // Try loading from URI if no direct bitmap
+        var art = bmpArt ?: bmpArt2
+
         if (art == null) {
-            val uriStr = metadata.getString(MediaMetadata.METADATA_KEY_ALBUM_ART_URI)
-                ?: metadata.getString(MediaMetadata.METADATA_KEY_ART_URI)
+            val uriStr = uriArt ?: uriArt2
             if (uriStr != null && lastContext != null) {
                 art = loadBitmapFromUri(lastContext!!, uriStr)
             }
@@ -106,12 +109,36 @@ object MediaState {
     }
 
     private fun loadBitmapFromUri(context: Context, uriStr: String): Bitmap? {
-        return try {
+        android.util.Log.d("MediaListener", "Loading art from URI: $uriStr")
+        // Try content:// URI
+        try {
             val uri = Uri.parse(uriStr)
-            context.contentResolver.openInputStream(uri)?.use { stream ->
+            val bmp = context.contentResolver.openInputStream(uri)?.use { stream ->
                 BitmapFactory.decodeStream(stream)
             }
-        } catch (_: Exception) { null }
+            if (bmp != null) {
+                android.util.Log.d("MediaListener", "Loaded from content URI: ${bmp.width}x${bmp.height}")
+                return bmp
+            }
+        } catch (e: Exception) {
+            android.util.Log.d("MediaListener", "Content URI failed: ${e.message}")
+        }
+        // Try HTTP/HTTPS URL in a blocking way (called from background thread via refresh)
+        if (uriStr.startsWith("http")) {
+            try {
+                val conn = java.net.URL(uriStr).openConnection()
+                conn.connectTimeout = 3000
+                conn.readTimeout = 3000
+                val bmp = BitmapFactory.decodeStream(conn.getInputStream())
+                if (bmp != null) {
+                    android.util.Log.d("MediaListener", "Loaded from HTTP: ${bmp.width}x${bmp.height}")
+                    return bmp
+                }
+            } catch (e: Exception) {
+                android.util.Log.d("MediaListener", "HTTP failed: ${e.message}")
+            }
+        }
+        return null
     }
 
     private fun extractColors(art: Bitmap?): DynamicColors {
@@ -121,20 +148,32 @@ object MediaState {
 
                 // Score each swatch: mostly area, but favor brighter colors
                 val maxPop = (palette.dominantSwatch?.population ?: 1).toFloat()
-                // Get colorful candidates
-                val colorful = palette.swatches
-                    .filter {
+                // Check if the image is mostly B&W by looking at the dominant color
+                val domHsv = FloatArray(3)
+                val domColor = palette.dominantSwatch?.rgb ?: 0xFF888888.toInt()
+                android.graphics.Color.colorToHSV(domColor, domHsv)
+                val isMonochrome = domHsv[1] < 0.20f // dominant color is grey = B&W image
+
+                val candidates = if (isMonochrome) {
+                    // B&W image — only use grey swatches, ignore any slight color casts
+                    palette.swatches.filter {
                         val hsv = FloatArray(3)
                         android.graphics.Color.colorToHSV(it.rgb, hsv)
-                        hsv[1] > 0.15f && hsv[2] > 0.2f
+                        hsv[2] > 0.25f
                     }
-
-                // If no colorful swatches, it's a B&W/monochrome album — use greys directly
-                val candidates = colorful.ifEmpty { palette.swatches.filter {
-                    val hsv = FloatArray(3)
-                    android.graphics.Color.colorToHSV(it.rgb, hsv)
-                    hsv[2] > 0.2f // just not pure black
-                } }
+                } else {
+                    // Colorful image — pick colorful swatches
+                    val colorful = palette.swatches.filter {
+                        val hsv = FloatArray(3)
+                        android.graphics.Color.colorToHSV(it.rgb, hsv)
+                        hsv[1] > 0.25f && hsv[2] > 0.25f
+                    }
+                    colorful.ifEmpty { palette.swatches.filter {
+                        val hsv = FloatArray(3)
+                        android.graphics.Color.colorToHSV(it.rgb, hsv)
+                        hsv[2] > 0.25f
+                    } }
+                }
                     .sortedByDescending { swatch ->
                         val hsv = FloatArray(3)
                         android.graphics.Color.colorToHSV(swatch.rgb, hsv)
@@ -144,16 +183,45 @@ object MediaState {
                         areaScore * 0.5f + brightScore * 0.3f + satScore * 0.2f
                     }
 
-                val accent = if (candidates.isNotEmpty()) {
-                    boostColor(candidates.first().rgb)
-                } else {
-                    // All colors are dark/grey — just boost the dominant
-                    val dom = palette.dominantSwatch?.rgb ?: 0xFFC9956B.toInt()
-                    boostColor(dom)
-                }
+                val accent: Int
+                val light: Int
+                val muted: Int
 
-                val light = lighten(accent)
-                val muted = darken(accent)
+                if (candidates.isEmpty()) {
+                    val dom = palette.dominantSwatch?.rgb ?: 0xFF888888.toInt()
+                    accent = boostColor(dom)
+                    light = lighten(accent)
+                    muted = darken(accent)
+                } else {
+                    // Pick 3 distinct colors by maximizing hue distance
+                    val sorted = candidates.sortedByDescending { swatch ->
+                        val hsv = FloatArray(3)
+                        android.graphics.Color.colorToHSV(swatch.rgb, hsv)
+                        val areaScore = swatch.population / maxPop
+                        val brightScore = hsv[2]
+                        val satScore = hsv[1]
+                        areaScore * 0.5f + brightScore * 0.3f + satScore * 0.2f
+                    }
+
+                    accent = boostColor(sorted[0].rgb)
+
+                    // Find a second color with different hue
+                    val accentHue = hueOf(accent)
+                    val second = sorted.drop(1).firstOrNull { swatch ->
+                        hueDist(hueOf(swatch.rgb), accentHue) > 30f
+                    }
+                    light = if (second != null) boostColor(second.rgb, brighten = true)
+                            else lighten(accent)
+
+                    // Find a third color different from both
+                    val lightHue = hueOf(light)
+                    val third = sorted.drop(1).firstOrNull { swatch ->
+                        hueDist(hueOf(swatch.rgb), accentHue) > 30f &&
+                        hueDist(hueOf(swatch.rgb), lightHue) > 30f
+                    }
+                    muted = if (third != null) darken(third.rgb)
+                            else darken(accent)
+                }
 
                 return DynamicColors(
                     accent = accent or 0xFF000000.toInt(),
@@ -162,9 +230,7 @@ object MediaState {
                 )
             } catch (_: Exception) {}
         }
-
-        val title = _nowPlaying.value.title
-        if (title.isNotEmpty()) return colorFromString(title)
+        // No art at all — use default colors, don't generate random hues
         return DynamicColors()
     }
 
@@ -176,12 +242,23 @@ object MediaState {
         return android.graphics.Color.HSVToColor(hsv)
     }
 
+    private fun hueOf(color: Int): Float {
+        val hsv = FloatArray(3)
+        android.graphics.Color.colorToHSV(color, hsv)
+        return hsv[0]
+    }
+
+    private fun hueDist(h1: Float, h2: Float): Float {
+        val d = kotlin.math.abs(h1 - h2)
+        return if (d > 180f) 360f - d else d
+    }
+
     private fun boostColor(color: Int, brighten: Boolean = false): Int {
         val hsv = FloatArray(3)
         android.graphics.Color.colorToHSV(color, hsv)
-        // Only boost saturation if the color actually has some — don't force color onto greys
-        if (hsv[1] > 0.1f) {
-            hsv[1] = (hsv[1] * 1.3f).coerceAtMost(1f)
+        // Only boost saturation if clearly colorful — never force color onto greys
+        if (hsv[1] > 0.25f) {
+            hsv[1] = (hsv[1] * 1.2f).coerceAtMost(1f)
         }
         hsv[2] = if (brighten) (hsv[2] * 1.2f).coerceIn(0.7f, 1f)
                  else hsv[2].coerceIn(0.5f, 0.85f)

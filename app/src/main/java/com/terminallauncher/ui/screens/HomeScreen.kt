@@ -40,7 +40,8 @@ fun HomeScreen(
     onChangeBirthDate: () -> Unit = {},
     onResetAll: () -> Unit = {},
     onToggleWallpaperHome: () -> Unit = {},
-    onToggleWallpaperLock: () -> Unit = {}
+    onToggleWallpaperLock: () -> Unit = {},
+    onSwipeDown: () -> Unit = {}
 ) {
     var dragY by remember { mutableFloatStateOf(0f) }
     val haptic = LocalHapticFeedback.current
@@ -54,7 +55,7 @@ fun HomeScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.Transparent)
+            .background(androidx.compose.ui.graphics.Color.Transparent)
             .pointerInput(state.terminalVisible, state.settingsVisible) {
                 detectVerticalDragGestures(
                     onDragStart = { dragY = 0f },
@@ -62,6 +63,9 @@ fun HomeScreen(
                         if (!state.terminalVisible && dragY < -100f) {
                             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                             onShowTerminal()
+                        } else if (!state.terminalVisible && dragY > 100f) {
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            onSwipeDown()
                         } else if (state.terminalVisible && dragY > 100f) {
                             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                             onHideTerminal()

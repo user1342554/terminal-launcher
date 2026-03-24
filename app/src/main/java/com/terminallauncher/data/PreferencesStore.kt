@@ -29,6 +29,9 @@ class PreferencesStore(private val context: Context) {
         private val SWIPE_LEFT_LABEL = stringPreferencesKey("swipe_left_label")
         private val WALLPAPER_HOME = booleanPreferencesKey("wallpaper_home")
         private val WALLPAPER_LOCK = booleanPreferencesKey("wallpaper_lock")
+        private val SWIPE_DOWN_PACKAGE = stringPreferencesKey("swipe_down_package")
+        private val SWIPE_DOWN_ACTIVITY = stringPreferencesKey("swipe_down_activity")
+        private val SWIPE_DOWN_LABEL = stringPreferencesKey("swipe_down_label")
     }
 
     data class BirthDate(val year: Int, val month: Int)
@@ -134,6 +137,23 @@ class PreferencesStore(private val context: Context) {
             prefs[SWIPE_RIGHT_PACKAGE] = packageName
             prefs[SWIPE_RIGHT_ACTIVITY] = activityName
             prefs[SWIPE_RIGHT_LABEL] = label
+        }
+    }
+
+    val swipeDownApp: Flow<SwipeApp?> = context.dataStore.data.map { prefs ->
+        val pkg = prefs[SWIPE_DOWN_PACKAGE]
+        val activity = prefs[SWIPE_DOWN_ACTIVITY]
+        val label = prefs[SWIPE_DOWN_LABEL]
+        if (pkg != null && activity != null && label != null) SwipeApp(pkg, activity, label) else null
+    }
+
+    suspend fun swipeDownAppCurrent(): SwipeApp? = swipeDownApp.first()
+
+    suspend fun saveSwipeDownApp(packageName: String, activityName: String, label: String) {
+        context.dataStore.edit { prefs ->
+            prefs[SWIPE_DOWN_PACKAGE] = packageName
+            prefs[SWIPE_DOWN_ACTIVITY] = activityName
+            prefs[SWIPE_DOWN_LABEL] = label
         }
     }
 

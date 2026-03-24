@@ -5,7 +5,6 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Paint
-import android.graphics.Rect
 import android.graphics.RectF
 import android.util.DisplayMetrics
 import android.view.WindowManager
@@ -28,7 +27,7 @@ class WallpaperGenerator(private val context: Context) {
     }
 
     fun generateAndSetWallpaper(birthYear: Int, birthMonth: Int, screenTimeMonths: Int = 0, setHome: Boolean = true, setLock: Boolean = true,
-                                dynamicAccent: Int? = null, dynamicLight: Int? = null, dynamicMuted: Int? = null, albumArt: Bitmap? = null) {
+                                dynamicAccent: Int? = null, dynamicLight: Int? = null, dynamicMuted: Int? = null) {
         val metrics = getScreenMetrics()
         val width = metrics.widthPixels
         val height = metrics.heightPixels
@@ -38,24 +37,17 @@ class WallpaperGenerator(private val context: Context) {
         val goldOverride = dynamicLight ?: GOLD_COLOR
         val dimOverride = dynamicMuted ?: DIM_COLOR
 
-        // Blur the album art once for both wallpapers
-        android.util.Log.d("WallpaperGen", "albumArt=${if (albumArt != null) "${albumArt.width}x${albumArt.height}" else "null"}")
-        val blurredBg = albumArt?.let { blurBitmap(it, width, height) }
-        android.util.Log.d("WallpaperGen", "blurredBg=${if (blurredBg != null) "ok" else "null"}")
-
         if (setLock) {
-            val lockBitmap = renderGrid(width, height, birthYear, birthMonth, screenTimeMonths, lockScreen = true, copper = copperOverride, gold = goldOverride, dim = dimOverride, bgBitmap = blurredBg)
+            val lockBitmap = renderGrid(width, height, birthYear, birthMonth, screenTimeMonths, lockScreen = true, copper = copperOverride, gold = goldOverride, dim = dimOverride)
             try { wm.setBitmap(lockBitmap, null, true, WallpaperManager.FLAG_LOCK) } catch (_: Exception) {}
             lockBitmap.recycle()
         }
 
         if (setHome) {
-            val homeBitmap = renderGrid(width, height, birthYear, birthMonth, screenTimeMonths, lockScreen = false, copper = copperOverride, gold = goldOverride, dim = dimOverride, bgBitmap = blurredBg)
+            val homeBitmap = renderGrid(width, height, birthYear, birthMonth, screenTimeMonths, lockScreen = false, copper = copperOverride, gold = goldOverride, dim = dimOverride)
             try { wm.setBitmap(homeBitmap, null, true, WallpaperManager.FLAG_SYSTEM) } catch (_: Exception) {}
             homeBitmap.recycle()
         }
-
-        blurredBg?.recycle()
     }
 
     private fun getScreenMetrics(): DisplayMetrics {
@@ -66,22 +58,11 @@ class WallpaperGenerator(private val context: Context) {
         return metrics
     }
 
-    private fun renderGrid(width: Int, height: Int, birthYear: Int, birthMonth: Int, screenTimeMonths: Int = 0, lockScreen: Boolean = false, copper: Int = COPPER_COLOR, gold: Int = GOLD_COLOR, dim: Int = DIM_COLOR, bgBitmap: Bitmap? = null): Bitmap {
+    private fun renderGrid(width: Int, height: Int, birthYear: Int, birthMonth: Int, screenTimeMonths: Int = 0, lockScreen: Boolean = false, copper: Int = COPPER_COLOR, gold: Int = GOLD_COLOR, dim: Int = DIM_COLOR): Bitmap {
         val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
 
         canvas.drawColor(BG_COLOR)
-
-        // Draw blurred album art background
-        if (bgBitmap != null) {
-            val p = Paint()
-            p.alpha = 180 // ~70% — clearly visible
-            canvas.drawBitmap(bgBitmap, null, Rect(0, 0, width, height), p)
-            // Light dark overlay to keep grid readable
-            p.alpha = 100 // ~39%
-            p.color = BG_COLOR
-            canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), p)
-        }
 
         val cal = Calendar.getInstance()
         val nowYear = cal.get(Calendar.YEAR)
@@ -178,12 +159,4 @@ class WallpaperGenerator(private val context: Context) {
         return bitmap
     }
 
-    // Simple blur: scale way down then back up — GPU-free, works on all Android versions
-    private fun blurBitmap(src: Bitmap, targetW: Int, targetH: Int): Bitmap? {
-        return try {
-            // Scale to tiny (creates natural blur when scaled back up)
-            val tiny = Bitmap.createScaledBitmap(src, 16, 16, true)
-            Bitmap.createScaledBitmap(tiny, targetW, targetH, true)
-        } catch (_: Exception) { null }
-    }
 }

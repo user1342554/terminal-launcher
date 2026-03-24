@@ -81,8 +81,8 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         refreshScreenTime()
         scheduleWallpaperUpdate()
 
-        // Refresh media state and update wallpaper on song change
-        viewModelScope.launch {
+        // Refresh media state on IO thread (URI loading needs network)
+        viewModelScope.launch(Dispatchers.IO) {
             var lastTitle = ""
             while (true) {
                 com.terminallauncher.data.MediaState.refresh(getApplication())
@@ -416,8 +416,12 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
 
     // Returns the saved shortcut app or null (picker needed)
     suspend fun getSwipeApp(direction: String): PreferencesStore.SwipeApp? {
-        return if (direction == "right") preferencesStore.swipeRightAppCurrent()
-               else preferencesStore.swipeLeftAppCurrent()
+        return when (direction) {
+            "right" -> preferencesStore.swipeRightAppCurrent()
+            "left" -> preferencesStore.swipeLeftAppCurrent()
+            "down" -> preferencesStore.swipeDownAppCurrent()
+            else -> null
+        }
     }
 
     fun showShortcutPicker(direction: String) {
@@ -429,10 +433,10 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     fun setShortcutApp(app: AppInfo) {
         viewModelScope.launch {
             val direction = _showAppPicker.value ?: return@launch
-            if (direction == "right") {
-                preferencesStore.saveSwipeRightApp(app.packageName, app.activityName, app.label)
-            } else {
-                preferencesStore.saveSwipeLeftApp(app.packageName, app.activityName, app.label)
+            when (direction) {
+                "right" -> preferencesStore.saveSwipeRightApp(app.packageName, app.activityName, app.label)
+                "left" -> preferencesStore.saveSwipeLeftApp(app.packageName, app.activityName, app.label)
+                "down" -> preferencesStore.saveSwipeDownApp(app.packageName, app.activityName, app.label)
             }
             _showAppPicker.value = null
             _terminalVisible.value = false

@@ -84,6 +84,7 @@ class CommandProcessor(private val context: Context) {
         TerminalOutput.TextLine("  install <app>   search play store"),
         TerminalOutput.TextLine("  shortcut left   set left swipe app"),
         TerminalOutput.TextLine("  shortcut right  set right swipe app"),
+        TerminalOutput.TextLine("  shortcut down   set swipe down app"),
         TerminalOutput.TextLine("  info <app>      app settings page"),
         TerminalOutput.TextLine("  uninstall <app> uninstall app"),
         TerminalOutput.TextLine("  clear           clear terminal"),
@@ -144,11 +145,12 @@ class CommandProcessor(private val context: Context) {
         val parts = arg.split(" ", limit = 2)
         val direction = parts[0].lowercase()
 
-        if (direction != "left" && direction != "right") {
+        if (direction !in listOf("left", "right", "down")) {
             return CommandResult(listOf(
-                TerminalOutput.TextLine("usage: shortcut left/right <app name>"),
+                TerminalOutput.TextLine("usage: shortcut left/right/down <app name>"),
                 TerminalOutput.TextLine("  shortcut left whatsapp"),
                 TerminalOutput.TextLine("  shortcut right chrome"),
+                TerminalOutput.TextLine("  shortcut down claude"),
             ))
         }
 
