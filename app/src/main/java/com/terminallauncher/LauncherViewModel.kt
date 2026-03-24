@@ -50,8 +50,7 @@ data class LauncherState(
     val currentPath: String = "",
     val showAppPicker: String? = null,
     val settingsVisible: Boolean = false,
-    val swipeLeftLabel: String? = null,
-    val swipeRightLabel: String? = null,
+    val swipeDownLabel: String? = null,
     val screenTimeMonths: Int = 0,
     val dynamicAccent: Int? = null, // null = use default copper
     val wallpaperHome: Boolean = true,
@@ -251,19 +250,17 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
             showAppPicker = showPicker,
             settingsVisible = settingsVisible,
             screenTimeMonths = stMonths,
-            swipeLeftLabel = null,
-            swipeRightLabel = null
+            swipeDownLabel = null
         )
     }.combine(
-        combine(preferencesStore.swipeLeftApp, preferencesStore.swipeRightApp, preferencesStore.wallpaperConfig) { left, right, wp ->
-            Triple(left, right, wp)
+        combine(preferencesStore.swipeDownApp, preferencesStore.wallpaperConfig) { down, wp ->
+            down to wp
         }
     ) { state, extras ->
         state.copy(
-            swipeLeftLabel = extras.first?.label,
-            swipeRightLabel = extras.second?.label,
-            wallpaperHome = extras.third.home,
-            wallpaperLock = extras.third.lock
+            swipeDownLabel = extras.first?.label,
+            wallpaperHome = extras.second.home,
+            wallpaperLock = extras.second.lock
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), LauncherState())
 

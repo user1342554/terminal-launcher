@@ -119,8 +119,7 @@ fun HomeScreen(
             SettingsOverlay(
                 birthYear = state.birthYear,
                 birthMonth = state.birthMonth,
-                swipeLeftLabel = state.swipeLeftLabel,
-                swipeRightLabel = state.swipeRightLabel,
+                swipeDownLabel = state.swipeDownLabel,
                 wallpaperHome = state.wallpaperHome,
                 wallpaperLock = state.wallpaperLock,
                 onChangeBirthDate = onChangeBirthDate,

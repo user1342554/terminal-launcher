@@ -30,8 +30,7 @@ import com.terminallauncher.ui.theme.TextInput
 fun SettingsOverlay(
     birthYear: Int?,
     birthMonth: Int?,
-    swipeLeftLabel: String?,
-    swipeRightLabel: String?,
+    swipeDownLabel: String?,
     wallpaperHome: Boolean,
     wallpaperLock: Boolean,
     onChangeBirthDate: () -> Unit,
@@ -69,16 +68,8 @@ fun SettingsOverlay(
             Spacer(Modifier.height(12.dp))
 
             SettingsRow(
-                label = "swipe right app",
-                value = swipeRightLabel ?: "not set",
-                onClick = null
-            )
-
-            Spacer(Modifier.height(12.dp))
-
-            SettingsRow(
-                label = "swipe left app",
-                value = swipeLeftLabel ?: "not set",
+                label = "swipe down app",
+                value = swipeDownLabel ?: "not set",
                 onClick = null
             )
 
