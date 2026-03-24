@@ -1,16 +1,19 @@
 package com.terminallauncher.ui.screens
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import com.terminallauncher.data.MediaState
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -19,7 +22,6 @@ import com.terminallauncher.ui.components.LifeGrid
 import com.terminallauncher.ui.components.SettingsOverlay
 import com.terminallauncher.ui.components.TerminalOverlay
 import com.terminallauncher.ui.theme.Background
-import kotlin.math.abs
 
 @Composable
 fun HomeScreen(
@@ -32,68 +34,41 @@ fun HomeScreen(
     onSubmit: () -> Unit,
     onLaunchIndex: (Int) -> Unit,
     onTabComplete: () -> Unit,
-    onSwipeBottomLeftToRight: () -> Unit,
-    onSwipeBottomRightToLeft: () -> Unit,
     onDoubleTap: () -> Unit = {},
     onLongPress: () -> Unit = {},
     onDismissSettings: () -> Unit = {},
     onChangeBirthDate: () -> Unit = {},
-    onResetAll: () -> Unit = {}
+    onResetAll: () -> Unit = {},
+    onToggleWallpaperHome: () -> Unit = {},
+    onToggleWallpaperLock: () -> Unit = {}
 ) {
-    var dragX by remember { mutableFloatStateOf(0f) }
     var dragY by remember { mutableFloatStateOf(0f) }
-    var startX by remember { mutableFloatStateOf(0f) }
-    var startY by remember { mutableFloatStateOf(0f) }
-
     val haptic = LocalHapticFeedback.current
+    val nowPlaying by MediaState.nowPlaying.collectAsState()
+    val defaultAccent = 0xFFC9956B.toInt()
+    val hasColors = nowPlaying.title.isNotEmpty() && nowPlaying.colors.accent != defaultAccent
+    val dynAccent = if (hasColors) Color(nowPlaying.colors.accent) else null
+    val dynLight = if (hasColors) Color(nowPlaying.colors.accentLight) else null
+    val dynMuted = if (hasColors) Color(nowPlaying.colors.muted) else null
 
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Background)
+            .background(Color.Transparent)
             .pointerInput(state.terminalVisible, state.settingsVisible) {
-                val screenW = size.width.toFloat()
-                val screenH = size.height.toFloat()
-                val bottomZone = screenH * 0.7f // bottom 30% of screen
-
-                detectDragGestures(
-                    onDragStart = { offset ->
-                        dragX = 0f; dragY = 0f
-                        startX = offset.x; startY = offset.y
-                    },
+                detectVerticalDragGestures(
+                    onDragStart = { dragY = 0f },
                     onDragEnd = {
-                        val startedBottom = startY > bottomZone
-                        val startedLeft = startX < screenW * 0.3f
-                        val startedRight = startX > screenW * 0.7f
-
-                        if (!state.terminalVisible) {
-                            when {
-                                // Swipe up -> open terminal
-                                dragY < -100f && abs(dragY) > abs(dragX) -> {
-                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                    onShowTerminal()
-                                }
-                                // Bottom-left corner swipe right
-                                startedBottom && startedLeft && dragX > 150f -> {
-                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                    onSwipeBottomLeftToRight()
-                                }
-                                // Bottom-right corner swipe left
-                                startedBottom && startedRight && dragX < -150f -> {
-                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                    onSwipeBottomRightToLeft()
-                                }
-                            }
-                        } else if (dragY > 100f && abs(dragY) > abs(dragX)) {
+                        if (!state.terminalVisible && dragY < -100f) {
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            onShowTerminal()
+                        } else if (state.terminalVisible && dragY > 100f) {
                             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                             onHideTerminal()
                         }
-                        dragX = 0f; dragY = 0f
+                        dragY = 0f
                     },
-                    onDrag = { _, delta ->
-                        dragX += delta.x
-                        dragY += delta.y
-                    }
+                    onVerticalDrag = { _, delta -> dragY += delta }
                 )
             }
             .pointerInput(state.terminalVisible, state.settingsVisible) {
@@ -110,7 +85,10 @@ fun HomeScreen(
                 birthYear = state.birthYear,
                 birthMonth = state.birthMonth,
                 alpha = if (state.terminalVisible) 0.08f else 1f,
-                screenTimeMonths = state.screenTimeMonths
+                screenTimeMonths = state.screenTimeMonths,
+                dynamicAccent = dynAccent,
+                dynamicLight = dynLight,
+                dynamicMuted = dynMuted
             )
         }
 
@@ -129,7 +107,8 @@ fun HomeScreen(
             onLaunchIndex = onLaunchIndex,
             onDismiss = onHideTerminal,
             onTabComplete = onTabComplete,
-            showAppPicker = state.showAppPicker != null
+            showAppPicker = state.showAppPicker != null,
+            dynamicAccent = dynAccent
         )
 
         if (state.settingsVisible) {
@@ -138,7 +117,11 @@ fun HomeScreen(
                 birthMonth = state.birthMonth,
                 swipeLeftLabel = state.swipeLeftLabel,
                 swipeRightLabel = state.swipeRightLabel,
+                wallpaperHome = state.wallpaperHome,
+                wallpaperLock = state.wallpaperLock,
                 onChangeBirthDate = onChangeBirthDate,
+                onToggleWallpaperHome = onToggleWallpaperHome,
+                onToggleWallpaperLock = onToggleWallpaperLock,
                 onResetAll = onResetAll,
                 onDismiss = onDismissSettings
             )

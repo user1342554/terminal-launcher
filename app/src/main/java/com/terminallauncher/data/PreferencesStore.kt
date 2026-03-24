@@ -27,6 +27,8 @@ class PreferencesStore(private val context: Context) {
         private val SWIPE_LEFT_PACKAGE = stringPreferencesKey("swipe_left_package")
         private val SWIPE_LEFT_ACTIVITY = stringPreferencesKey("swipe_left_activity")
         private val SWIPE_LEFT_LABEL = stringPreferencesKey("swipe_left_label")
+        private val WALLPAPER_HOME = booleanPreferencesKey("wallpaper_home")
+        private val WALLPAPER_LOCK = booleanPreferencesKey("wallpaper_lock")
     }
 
     data class BirthDate(val year: Int, val month: Int)
@@ -48,6 +50,26 @@ class PreferencesStore(private val context: Context) {
 
     val setupComplete: Flow<Boolean> = context.dataStore.data.map { prefs ->
         prefs[SETUP_COMPLETE] ?: false
+    }
+
+    data class WallpaperConfig(val home: Boolean, val lock: Boolean)
+
+    val wallpaperConfig: Flow<WallpaperConfig> = context.dataStore.data.map { prefs ->
+        WallpaperConfig(
+            home = prefs[WALLPAPER_HOME] ?: true,
+            lock = prefs[WALLPAPER_LOCK] ?: true
+        )
+    }
+
+    suspend fun wallpaperConfigCurrent(): WallpaperConfig {
+        return wallpaperConfig.first()
+    }
+
+    suspend fun setWallpaperConfig(home: Boolean, lock: Boolean) {
+        context.dataStore.edit { prefs ->
+            prefs[WALLPAPER_HOME] = home
+            prefs[WALLPAPER_LOCK] = lock
+        }
     }
 
     suspend fun completeSetup() {

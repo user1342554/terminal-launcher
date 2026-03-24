@@ -66,10 +66,12 @@ fun TerminalOverlay(
     onLaunchIndex: (Int) -> Unit,
     onDismiss: () -> Unit,
     onTabComplete: () -> Unit = {},
-    showAppPicker: Boolean = false
+    showAppPicker: Boolean = false,
+    dynamicAccent: androidx.compose.ui.graphics.Color? = null
 ) {
     if (!visible) return
 
+    val accentColor = dynamicAccent ?: CopperLived
     val focusRequester = remember { FocusRequester() }
     val view = LocalView.current
 
@@ -96,7 +98,7 @@ fun TerminalOverlay(
             history.takeLast(3).forEach { entry ->
                 Text(
                     text = buildAnnotatedString {
-                        withStyle(SpanStyle(color = CopperLived)) { append("$ ") }
+                        withStyle(SpanStyle(color = accentColor)) { append("$ ") }
                         withStyle(SpanStyle(color = TextInput)) { append(entry.command) }
                     },
                     fontFamily = Monospace,
@@ -121,7 +123,7 @@ fun TerminalOverlay(
                         )
                         is TerminalOutput.SelectableItem -> Text(
                             text = line.label,
-                            color = CopperLived,
+                            color = accentColor,
                             fontFamily = Monospace,
                             fontSize = 13.sp,
                             modifier = Modifier.padding(start = 8.dp, top = 1.dp, bottom = 1.dp)
@@ -143,7 +145,7 @@ fun TerminalOverlay(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     text = "$ ",
-                    color = if (isCommandMode) CopperLived else TextPlaceholder,
+                    color = if (isCommandMode) accentColor else TextPlaceholder,
                     fontFamily = Monospace,
                     fontSize = 16.sp
                 )
@@ -167,7 +169,7 @@ fun TerminalOverlay(
                             if (query.isEmpty()) {
                                 Text(
                                     text = if (showAppPicker) "pick app for swipe shortcut..." else "search or command...",
-                                    color = if (showAppPicker) CopperLived.copy(alpha = 0.6f) else TextPlaceholder,
+                                    color = if (showAppPicker) accentColor.copy(alpha = 0.6f) else TextPlaceholder,
                                     fontFamily = Monospace,
                                     fontSize = 16.sp
                                 )

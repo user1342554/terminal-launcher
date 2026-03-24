@@ -52,7 +52,10 @@ data class LauncherState(
     val settingsVisible: Boolean = false,
     val swipeLeftLabel: String? = null,
     val swipeRightLabel: String? = null,
-    val screenTimeMonths: Int = 0
+    val screenTimeMonths: Int = 0,
+    val dynamicAccent: Int? = null, // null = use default copper
+    val wallpaperHome: Boolean = true,
+    val wallpaperLock: Boolean = true
 )
 
 class LauncherViewModel(application: Application) : AndroidViewModel(application) {
@@ -77,6 +80,32 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         appRepository.start()
         refreshScreenTime()
         scheduleWallpaperUpdate()
+
+        // Refresh media state and update wallpaper on song change
+        viewModelScope.launch {
+            var lastTitle = ""
+            while (true) {
+                com.terminallauncher.data.MediaState.refresh(getApplication())
+                val current = com.terminallauncher.data.MediaState.nowPlaying.value
+                if (current.title.isNotEmpty() && current.title != lastTitle) {
+                    lastTitle = current.title
+                    // Update wallpaper with new colors
+                    launch(Dispatchers.IO) {
+                        val bd = preferencesStore.birthDate.first() ?: return@launch
+                        val cfg = preferencesStore.wallpaperConfigCurrent()
+                        val cal = java.util.Calendar.getInstance()
+                        val lived = ((cal.get(java.util.Calendar.YEAR) - bd.year) * 12 +
+                            (cal.get(java.util.Calendar.MONTH) + 1 - bd.month)).coerceIn(0, 960)
+                        val st = usageTracker.screenTimeMonths(960 - lived)
+                        wallpaperGenerator.generateAndSetWallpaper(bd.year, bd.month, st, cfg.home, cfg.lock,
+                            dynamicAccent = current.colors.accent,
+                            dynamicLight = current.colors.accentLight,
+                            dynamicMuted = current.colors.muted)
+                    }
+                }
+                kotlinx.coroutines.delay(2000)
+            }
+        }
 
         // Wire shortcut command to save the app
         commandProcessor.onShortcutChange = { direction, query ->
@@ -160,8 +189,15 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         commandProcessor.onWallpaperRefresh = { updateWallpaperNow() }
     }
 
+    private val _resumeTrigger = MutableStateFlow(0)
+    val resumeTrigger: StateFlow<Int> = _resumeTrigger
+
     fun refreshScreenTime() {
         _screenTime.value = usageTracker.getScreenTime()
+    }
+
+    fun onResume() {
+        _resumeTrigger.value++
     }
 
     val state: StateFlow<LauncherState> = combine(
@@ -219,11 +255,15 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
             swipeRightLabel = null
         )
     }.combine(
-        combine(preferencesStore.swipeLeftApp, preferencesStore.swipeRightApp) { left, right -> left to right }
-    ) { state, swipeApps ->
+        combine(preferencesStore.swipeLeftApp, preferencesStore.swipeRightApp, preferencesStore.wallpaperConfig) { left, right, wp ->
+            Triple(left, right, wp)
+        }
+    ) { state, extras ->
         state.copy(
-            swipeLeftLabel = swipeApps.first?.label,
-            swipeRightLabel = swipeApps.second?.label
+            swipeLeftLabel = extras.first?.label,
+            swipeRightLabel = extras.second?.label,
+            wallpaperHome = extras.third.home,
+            wallpaperLock = extras.third.lock
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), LauncherState())
 
@@ -241,9 +281,9 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
                 val lived = ((cal.get(java.util.Calendar.YEAR) - year) * 12 +
                     (cal.get(java.util.Calendar.MONTH) + 1 - month)).coerceIn(0, 960)
                 val st = usageTracker.screenTimeMonths(960 - lived)
-                wallpaperGenerator.generateAndSetWallpaper(year, month, st)
+                val cfg = preferencesStore.wallpaperConfigCurrent()
+                wallpaperGenerator.generateAndSetWallpaper(year, month, st, cfg.home, cfg.lock)
             }
-            // Schedule monthly wallpaper update
             scheduleWallpaperUpdate()
         }
     }
@@ -266,7 +306,20 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
             val lived = ((cal.get(java.util.Calendar.YEAR) - bd.year) * 12 +
                 (cal.get(java.util.Calendar.MONTH) + 1 - bd.month)).coerceIn(0, 960)
             val stMonths = usageTracker.screenTimeMonths(960 - lived)
-            wallpaperGenerator.generateAndSetWallpaper(bd.year, bd.month, stMonths)
+            val cfg = preferencesStore.wallpaperConfigCurrent()
+            val media = com.terminallauncher.data.MediaState.nowPlaying.value
+            val hasMedia = media.title.isNotEmpty()
+            wallpaperGenerator.generateAndSetWallpaper(bd.year, bd.month, stMonths, cfg.home, cfg.lock,
+                dynamicAccent = if (hasMedia) media.colors.accent else null,
+                dynamicLight = if (hasMedia) media.colors.accentLight else null,
+                dynamicMuted = if (hasMedia) media.colors.muted else null)
+        }
+    }
+
+    fun setWallpaperConfig(home: Boolean, lock: Boolean) {
+        viewModelScope.launch {
+            preferencesStore.setWallpaperConfig(home, lock)
+            updateWallpaperNow()
         }
     }
 

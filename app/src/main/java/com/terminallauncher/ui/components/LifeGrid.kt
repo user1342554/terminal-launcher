@@ -27,8 +27,14 @@ fun LifeGrid(
     birthMonth: Int,
     modifier: Modifier = Modifier,
     alpha: Float = 1f,
-    screenTimeMonths: Int = 0
+    screenTimeMonths: Int = 0,
+    dynamicAccent: androidx.compose.ui.graphics.Color? = null,
+    dynamicLight: androidx.compose.ui.graphics.Color? = null,
+    dynamicMuted: androidx.compose.ui.graphics.Color? = null
 ) {
+    val livedColor = dynamicAccent ?: CopperLived
+    val currentColor = dynamicLight ?: GoldCurrent
+    val remainColor = dynamicMuted ?: DimRemaining
     val now = remember {
         val cal = Calendar.getInstance()
         Pair(cal.get(Calendar.YEAR), cal.get(Calendar.MONTH) + 1)
@@ -89,14 +95,15 @@ fun LifeGrid(
             val color = when {
                 i < livedMonths -> {
                     val opacity = opacityValues[i % opacityValues.size]
-                    CopperLived.copy(alpha = opacity * alpha)
+                    livedColor.copy(alpha = opacity * alpha)
                 }
-                i == livedMonths -> GoldCurrent.copy(alpha = alpha)
+                i == livedMonths -> currentColor.copy(alpha = alpha)
                 i in screenTimeStart until screenTimeEnd -> {
                     val opacity = opacityValues[i % opacityValues.size]
-                    ScreenTimeWasted.copy(alpha = opacity * 0.7f * alpha)
+                    val stColor = if (dynamicAccent != null) dynamicAccent.copy(alpha = 0.3f) else ScreenTimeWasted
+                    stColor.copy(alpha = opacity * 0.7f * alpha)
                 }
-                else -> DimRemaining.copy(alpha = alpha)
+                else -> remainColor.copy(alpha = alpha)
             }
 
             drawRoundRect(
@@ -117,7 +124,7 @@ fun LifeGrid(
             val glowOffset = (glowSize - cellSize) / 2f
 
             drawRoundRect(
-                color = GoldCurrent.copy(alpha = 0.15f * alpha),
+                color = currentColor.copy(alpha = 0.15f * alpha),
                 topLeft = Offset(x - glowOffset, y - glowOffset),
                 size = Size(glowSize, glowSize),
                 cornerRadius = CornerRadius(cornerRadius * 1.3f, cornerRadius * 1.3f)

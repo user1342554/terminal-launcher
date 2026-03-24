@@ -46,6 +46,7 @@ fun SetupScreen(
     onSaveBirthDate: (year: Int, month: Int) -> Unit,
     onRequestUsageAccess: () -> Unit,
     onRequestDefaultLauncher: () -> Unit,
+    onSetWallpaperConfig: (home: Boolean, lock: Boolean) -> Unit,
     hasUsagePermission: Boolean
 ) {
     var step by remember { mutableIntStateOf(1) }
@@ -60,7 +61,7 @@ fun SetupScreen(
     ) {
         // Step indicator
         Text(
-            text = "SETUP  $step/3",
+            text = "SETUP  $step/4",
             color = TextDim,
             fontFamily = Monospace,
             fontSize = 12.sp,
@@ -79,7 +80,11 @@ fun SetupScreen(
                 onRequest = onRequestUsageAccess,
                 onNext = { step = 3 }
             )
-            3 -> DefaultLauncherStep(
+            3 -> WallpaperStep(
+                onSetConfig = onSetWallpaperConfig,
+                onNext = { step = 4 }
+            )
+            4 -> DefaultLauncherStep(
                 onRequest = onRequestDefaultLauncher
             )
         }
@@ -199,6 +204,59 @@ private fun UsageAccessStep(
         SetupButton("open settings →", onClick = onRequest)
         Spacer(modifier = Modifier.height(16.dp))
         SetupButton("skip →", onClick = onNext)
+    }
+}
+
+@Composable
+private fun WallpaperStep(
+    onSetConfig: (home: Boolean, lock: Boolean) -> Unit,
+    onNext: () -> Unit
+) {
+    var home by remember { mutableStateOf(true) }
+    var lock by remember { mutableStateOf(true) }
+
+    Text(
+        text = "set life grid as wallpaper?",
+        color = TextSecondary,
+        fontFamily = Monospace,
+        fontSize = 14.sp
+    )
+
+    Spacer(modifier = Modifier.height(24.dp))
+
+    SetupToggle("home screen", home) { home = !home }
+    Spacer(modifier = Modifier.height(12.dp))
+    SetupToggle("lock screen", lock) { lock = !lock }
+
+    Spacer(modifier = Modifier.height(40.dp))
+
+    SetupButton("continue →") {
+        onSetConfig(home, lock)
+        onNext()
+    }
+
+    Spacer(modifier = Modifier.height(12.dp))
+
+    SetupButton("skip →") {
+        onSetConfig(false, false)
+        onNext()
+    }
+}
+
+@Composable
+private fun SetupToggle(label: String, enabled: Boolean, onClick: () -> Unit) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.clickable(onClick = onClick)
+    ) {
+        Text(
+            text = if (enabled) "[x]" else "[ ]",
+            color = if (enabled) com.terminallauncher.ui.theme.CopperLived else TextDim,
+            fontFamily = Monospace,
+            fontSize = 14.sp
+        )
+        Spacer(Modifier.width(12.dp))
+        Text(text = label, color = TextSecondary, fontFamily = Monospace, fontSize = 14.sp)
     }
 }
 

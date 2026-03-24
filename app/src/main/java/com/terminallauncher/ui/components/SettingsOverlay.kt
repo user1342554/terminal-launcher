@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -31,7 +32,11 @@ fun SettingsOverlay(
     birthMonth: Int?,
     swipeLeftLabel: String?,
     swipeRightLabel: String?,
+    wallpaperHome: Boolean,
+    wallpaperLock: Boolean,
     onChangeBirthDate: () -> Unit,
+    onToggleWallpaperHome: () -> Unit,
+    onToggleWallpaperLock: () -> Unit,
     onResetAll: () -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -55,7 +60,6 @@ fun SettingsOverlay(
                 modifier = Modifier.padding(bottom = 24.dp)
             )
 
-            // Birth date
             SettingsRow(
                 label = "birth date",
                 value = if (birthYear != null && birthMonth != null) "$birthYear / $birthMonth" else "not set",
@@ -64,7 +68,6 @@ fun SettingsOverlay(
 
             Spacer(Modifier.height(12.dp))
 
-            // Swipe right shortcut
             SettingsRow(
                 label = "swipe right app",
                 value = swipeRightLabel ?: "not set",
@@ -73,16 +76,38 @@ fun SettingsOverlay(
 
             Spacer(Modifier.height(12.dp))
 
-            // Swipe left shortcut
             SettingsRow(
                 label = "swipe left app",
                 value = swipeLeftLabel ?: "not set",
                 onClick = null
             )
 
+            Spacer(Modifier.height(24.dp))
+
+            Text(
+                text = "wallpaper",
+                color = CopperLived,
+                fontFamily = Monospace,
+                fontSize = 16.sp,
+                modifier = Modifier.padding(bottom = 12.dp)
+            )
+
+            ToggleRow(
+                label = "home screen",
+                enabled = wallpaperHome,
+                onClick = onToggleWallpaperHome
+            )
+
+            Spacer(Modifier.height(8.dp))
+
+            ToggleRow(
+                label = "lock screen",
+                enabled = wallpaperLock,
+                onClick = onToggleWallpaperLock
+            )
+
             Spacer(Modifier.height(32.dp))
 
-            // Reset all
             Text(
                 text = "[ reset all ]",
                 color = Color(0xFFFF6B6B),
@@ -107,11 +132,7 @@ fun SettingsOverlay(
 }
 
 @Composable
-private fun SettingsRow(
-    label: String,
-    value: String,
-    onClick: (() -> Unit)?
-) {
+private fun SettingsRow(label: String, value: String, onClick: (() -> Unit)?) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
@@ -121,19 +142,29 @@ private fun SettingsRow(
             .padding(vertical = 10.dp)
     ) {
         Column {
-            Text(
-                text = label,
-                color = TextInput,
-                fontFamily = Monospace,
-                fontSize = 14.sp
-            )
-            Text(
-                text = value,
-                color = TextDim,
-                fontFamily = Monospace,
-                fontSize = 12.sp,
-                modifier = Modifier.padding(top = 2.dp)
-            )
+            Text(text = label, color = TextInput, fontFamily = Monospace, fontSize = 14.sp)
+            Text(text = value, color = TextDim, fontFamily = Monospace, fontSize = 12.sp, modifier = Modifier.padding(top = 2.dp))
         }
+    }
+}
+
+@Composable
+private fun ToggleRow(label: String, enabled: Boolean, onClick: () -> Unit) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .clickable(onClick = onClick)
+            .padding(vertical = 10.dp)
+    ) {
+        Text(
+            text = if (enabled) "[x]" else "[ ]",
+            color = if (enabled) CopperLived else TextDim,
+            fontFamily = Monospace,
+            fontSize = 14.sp
+        )
+        Spacer(Modifier.width(12.dp))
+        Text(text = label, color = TextInput, fontFamily = Monospace, fontSize = 14.sp)
     }
 }
