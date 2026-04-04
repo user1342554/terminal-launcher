@@ -67,7 +67,8 @@ fun TerminalOverlay(
     onDismiss: () -> Unit,
     onTabComplete: () -> Unit = {},
     showAppPicker: Boolean = false,
-    dynamicAccent: androidx.compose.ui.graphics.Color? = null
+    dynamicAccent: androidx.compose.ui.graphics.Color? = null,
+    commandSuggestions: List<Pair<String, String>> = emptyList()
 ) {
     if (!visible) return
 
@@ -178,11 +179,11 @@ fun TerminalOverlay(
                         }
                     }
                 )
-                // Tab button
-                if (isCommandMode) {
+                // Tab button — always show when there's input
+                if (query.isNotEmpty()) {
                     Text(
                         text = "TAB",
-                        color = TextDim,
+                        color = if (isCommandMode) CopperLived else TextDim,
                         fontFamily = Monospace,
                         fontSize = 11.sp,
                         modifier = Modifier
@@ -199,7 +200,7 @@ fun TerminalOverlay(
                 results.take(5).forEachIndexed { index, result ->
                     ResultRow(result, index == selectedIndex) { onLaunchIndex(index) }
                 }
-            } else if (!isCommandMode && query.isNotEmpty() && results.isEmpty()) {
+            } else if (!isCommandMode && query.isNotEmpty() && results.isEmpty() && commandSuggestions.isEmpty()) {
                 Text(
                     text = "no results",
                     color = TextDim,
@@ -207,6 +208,35 @@ fun TerminalOverlay(
                     fontSize = 13.sp,
                     modifier = Modifier.padding(vertical = 4.dp)
                 )
+            }
+
+            // === COMMAND SUGGESTIONS (after apps) ===
+            if (commandSuggestions.isNotEmpty()) {
+                commandSuggestions.forEach { (cmd, desc) ->
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable { onQueryChange(cmd + " ") }
+                            .padding(horizontal = 12.dp, vertical = 10.dp)
+                    ) {
+                        Text(
+                            text = cmd,
+                            color = accentColor,
+                            fontFamily = Monospace,
+                            fontSize = 15.sp
+                        )
+                        if (desc.isNotEmpty()) {
+                            Text(
+                                text = "  $desc",
+                                color = TextDim,
+                                fontFamily = Monospace,
+                                fontSize = 13.sp
+                            )
+                        }
+                    }
+                }
             }
 
             if (isCommandMode && query.isNotEmpty()) {

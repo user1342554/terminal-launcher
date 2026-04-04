@@ -44,7 +44,8 @@ fun HomeScreen(
                 onLaunchIndex = onLaunchIndex,
                 onDismiss = {},
                 onTabComplete = onTabComplete,
-                showAppPicker = state.showAppPicker != null
+                showAppPicker = state.showAppPicker != null,
+                commandSuggestions = state.commandSuggestions
             )
         }
     }

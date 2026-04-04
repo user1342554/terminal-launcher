@@ -40,7 +40,8 @@ data class LauncherState(
     val history: List<HistoryEntry> = emptyList(),
     val currentPath: String = "",
     val showAppPicker: String? = null,
-    val musicPlayerVisible: Boolean = false
+    val musicPlayerVisible: Boolean = false,
+    val commandSuggestions: List<Pair<String, String>> = emptyList()
 )
 
 class LauncherViewModel(application: Application) : AndroidViewModel(application) {
@@ -179,6 +180,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         val showPicker = extras[4] as String?
 
         val commandMode = isCmd || commandProcessor.isCommand(query)
+        val cmdSuggestions = commandProcessor.getSuggestions(query)
 
         val results = if (commandMode) emptyList()
         else searchEngine.search(query, apps, screenTime)
@@ -196,7 +198,8 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
             history = history,
             currentPath = commandProcessor.currentPath,
             showAppPicker = showPicker,
-            musicPlayerVisible = musicPlayerVisible
+            musicPlayerVisible = musicPlayerVisible,
+            commandSuggestions = cmdSuggestions
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), LauncherState())
 

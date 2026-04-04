@@ -30,6 +30,45 @@ class CommandProcessor(private val context: Context) {
 
     private val commands = setOf("cd", "mkdir", "ls", "list", "install", "pwd", "rm", "touch", "cat", "shortcut", "help", "info", "uninstall", "clear", "mus")
 
+    private val commandDescriptions = mapOf(
+        "ls" to "list files",
+        "cd" to "change directory",
+        "mkdir" to "create folder",
+        "rm" to "delete file/folder",
+        "touch" to "create file",
+        "cat" to "view file",
+        "pwd" to "current path",
+        "install" to "search play store",
+        "info" to "app settings",
+        "uninstall" to "uninstall app",
+        "shortcut" to "set swipe shortcut",
+        "mus" to "music player",
+        "clear" to "clear terminal",
+        "help" to "show commands"
+    )
+
+    fun getSuggestions(input: String): List<Pair<String, String>> {
+        val trimmed = input.trim().lowercase()
+        if (trimmed.isEmpty() || trimmed.contains(" ") || trimmed.startsWith(",")) return emptyList()
+        if (trimmed in commands) return emptyList()
+
+        // Prefix matches first, then fuzzy
+        val prefix = commands.filter { it.startsWith(trimmed) }.sorted()
+        val fuzzy = commands.filter { cmd ->
+            cmd !in prefix && fuzzyMatches(trimmed, cmd)
+        }.sortedBy { it }
+
+        return (prefix + fuzzy).map { it to (commandDescriptions[it] ?: "") }
+    }
+
+    private fun fuzzyMatches(query: String, target: String): Boolean {
+        var qi = 0
+        for (ch in target) {
+            if (qi < query.length && ch == query[qi]) qi++
+        }
+        return qi == query.length
+    }
+
     fun isCommand(input: String): Boolean {
         val trimmed = input.trim()
         if (trimmed.startsWith(",")) return true // Google search
@@ -82,15 +121,17 @@ class CommandProcessor(private val context: Context) {
         TerminalOutput.TextLine("  cat <file>      view file"),
         TerminalOutput.TextLine("  pwd             current path"),
         TerminalOutput.TextLine("  install <app>   search play store"),
-        TerminalOutput.TextLine("  shortcut left   set left swipe app"),
-        TerminalOutput.TextLine("  shortcut right  set right swipe app"),
-        TerminalOutput.TextLine("  shortcut down   set swipe down app"),
         TerminalOutput.TextLine("  info <app>      app settings page"),
         TerminalOutput.TextLine("  uninstall <app> uninstall app"),
+        TerminalOutput.TextLine("  shortcut <dir>  set swipe shortcut"),
+        TerminalOutput.TextLine("    dir: left / right / down"),
         TerminalOutput.TextLine("  mus             music player"),
-        TerminalOutput.TextLine("  clear           clear terminal"),
         TerminalOutput.TextLine("  , <query>       google search"),
+        TerminalOutput.TextLine("  clear           clear terminal"),
         TerminalOutput.TextLine("  help            show this"),
+        TerminalOutput.TextLine(""),
+        TerminalOutput.TextLine("TAB completes commands and paths", dim = true),
+        TerminalOutput.TextLine("type to search and launch apps", dim = true),
     ))
 
     // App info resolver — set by ViewModel
@@ -118,17 +159,29 @@ class CommandProcessor(private val context: Context) {
 
         // Complete command names
         if (!trimmed.contains(" ")) {
-            val match = commands.filter { it.startsWith(trimmed) }
-            if (match.size == 1) return match.first() + " "
+            val matches = commands.filter { it.startsWith(trimmed) }
+            if (matches.size == 1) return matches.first() + " "
+            if (matches.size > 1) {
+                val prefix = commonPrefix(matches.toList())
+                if (prefix.length > trimmed.length) return prefix
+            }
             return null
         }
 
-        // Complete file/folder names for file commands
         val parts = trimmed.split(" ", limit = 2)
         val cmd = parts[0]
         val partial = parts.getOrNull(1) ?: ""
 
-        if (cmd in setOf("cd", "cat", "rm") && partial.isNotEmpty()) {
+        // Complete shortcut directions
+        if (cmd == "shortcut" && !partial.contains(" ")) {
+            val dirs = listOf("left", "right", "down")
+            val matches = dirs.filter { it.startsWith(partial) }
+            if (matches.size == 1) return "$cmd ${matches.first()} "
+            return null
+        }
+
+        // Complete file/folder names for file commands
+        if (cmd in setOf("cd", "cat", "rm", "touch", "mkdir") && partial.isNotEmpty()) {
             val files = currentDir.listFiles() ?: return null
             val matches = files.filter { it.name.lowercase().startsWith(partial.lowercase()) }
             if (matches.size == 1) {
@@ -136,9 +189,25 @@ class CommandProcessor(private val context: Context) {
                 val suffix = if (matches.first().isDirectory) "/" else ""
                 return "$cmd $name$suffix"
             }
+            if (matches.size > 1) {
+                val prefix = commonPrefix(matches.map { it.name.lowercase() })
+                if (prefix.length > partial.length) return "$cmd $prefix"
+            }
         }
 
         return null
+    }
+
+    private fun commonPrefix(strings: List<String>): String {
+        if (strings.isEmpty()) return ""
+        var prefix = strings[0]
+        for (s in strings.drop(1)) {
+            while (!s.startsWith(prefix)) {
+                prefix = prefix.dropLast(1)
+                if (prefix.isEmpty()) return ""
+            }
+        }
+        return prefix
     }
 
     private fun shortcut(arg: String): CommandResult {
