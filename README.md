@@ -1,4 +1,4 @@
-# Carpe Diem
+# Terminal Launcher
 
 A minimalist Android launcher that replaces your home screen with a terminal. No app drawer. No icons. No widgets. Just a terminal to launch apps, run commands, and control your music.
 
