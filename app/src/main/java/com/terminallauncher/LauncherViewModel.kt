@@ -13,14 +13,7 @@ import com.terminallauncher.data.SearchEngine
 import com.terminallauncher.data.SearchResult
 import com.terminallauncher.data.TerminalOutput
 import com.terminallauncher.data.UsageTracker
-import com.terminallauncher.data.WallpaperGenerator
-import com.terminallauncher.data.WallpaperUpdateWorker
-import androidx.work.ExistingPeriodicWorkPolicy
-import androidx.work.PeriodicWorkRequestBuilder
-import androidx.work.WorkManager
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
@@ -38,9 +31,7 @@ data class HistoryEntry(
 
 data class LauncherState(
     val screen: Screen = Screen.SETUP,
-    val birthYear: Int? = null,
-    val birthMonth: Int? = null,
-    val terminalVisible: Boolean = false,
+    val terminalVisible: Boolean = true,
     val searchQuery: String = "",
     val searchResults: List<SearchResult> = emptyList(),
     val selectedIndex: Int = 0,
@@ -48,13 +39,7 @@ data class LauncherState(
     val isCommandMode: Boolean = false,
     val history: List<HistoryEntry> = emptyList(),
     val currentPath: String = "",
-    val showAppPicker: String? = null,
-    val settingsVisible: Boolean = false,
-    val swipeDownLabel: String? = null,
-    val screenTimeMonths: Int = 0,
-    val dynamicAccent: Int? = null, // null = use default copper
-    val wallpaperHome: Boolean = true,
-    val wallpaperLock: Boolean = true
+    val showAppPicker: String? = null
 )
 
 class LauncherViewModel(application: Application) : AndroidViewModel(application) {
@@ -64,47 +49,18 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     private val searchEngine = SearchEngine()
     val usageTracker = UsageTracker(application)
     val commandProcessor = CommandProcessor(application)
-    private val wallpaperGenerator = WallpaperGenerator(application)
 
-    private val _terminalVisible = MutableStateFlow(false)
+    private val _terminalVisible = MutableStateFlow(true)
     private val _searchQuery = MutableStateFlow("")
     private val _selectedIndex = MutableStateFlow(0)
     private val _screenTime = MutableStateFlow<Map<String, Long>>(emptyMap())
     private val _history = MutableStateFlow<List<HistoryEntry>>(emptyList())
     private val _isCommandMode = MutableStateFlow(false)
-    private val _showAppPicker = MutableStateFlow<String?>(null) // null = hidden, "left" or "right" = which shortcut
-    private val _settingsVisible = MutableStateFlow(false)
+    private val _showAppPicker = MutableStateFlow<String?>(null)
 
     init {
         appRepository.start()
         refreshScreenTime()
-        scheduleWallpaperUpdate()
-
-        // Refresh media state on IO thread (URI loading needs network)
-        viewModelScope.launch(Dispatchers.IO) {
-            var lastTitle = ""
-            while (true) {
-                com.terminallauncher.data.MediaState.refresh(getApplication())
-                val current = com.terminallauncher.data.MediaState.nowPlaying.value
-                if (current.title.isNotEmpty() && current.title != lastTitle) {
-                    lastTitle = current.title
-                    // Update wallpaper with new colors
-                    launch(Dispatchers.IO) {
-                        val bd = preferencesStore.birthDate.first() ?: return@launch
-                        val cfg = preferencesStore.wallpaperConfigCurrent()
-                        val cal = java.util.Calendar.getInstance()
-                        val lived = ((cal.get(java.util.Calendar.YEAR) - bd.year) * 12 +
-                            (cal.get(java.util.Calendar.MONTH) + 1 - bd.month)).coerceIn(0, 960)
-                        val st = usageTracker.screenTimeMonths(960 - lived)
-                        wallpaperGenerator.generateAndSetWallpaper(bd.year, bd.month, st, cfg.home, cfg.lock,
-                            dynamicAccent = current.colors.accent,
-                            dynamicLight = current.colors.accentLight,
-                            dynamicMuted = current.colors.muted)
-                    }
-                }
-                kotlinx.coroutines.delay(2000)
-            }
-        }
 
         // Wire shortcut command to save the app
         commandProcessor.onShortcutChange = { direction, query ->
@@ -185,31 +141,21 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
             }
         }
 
-        commandProcessor.onWallpaperRefresh = { updateWallpaperNow() }
     }
-
-    private val _resumeTrigger = MutableStateFlow(0)
-    val resumeTrigger: StateFlow<Int> = _resumeTrigger
 
     fun refreshScreenTime() {
         _screenTime.value = usageTracker.getScreenTime()
     }
 
-    fun onResume() {
-        _resumeTrigger.value++
-    }
-
     val state: StateFlow<LauncherState> = combine(
-        combine(preferencesStore.birthDate, preferencesStore.setupComplete) { bd, sc -> bd to sc },
+        preferencesStore.setupComplete,
         appRepository.apps,
-        combine(_terminalVisible, _settingsVisible) { tv, sv -> tv to sv },
+        _terminalVisible,
         _searchQuery,
         combine(_selectedIndex, _screenTime, _history, _isCommandMode, _showAppPicker) { idx, st, hist, cmd, picker ->
             listOf(idx, st, hist, cmd, picker)
         }
-    ) { prefs, apps, visibility, query, extras ->
-        val (birthDate, setupComplete) = prefs
-        val (terminalVisible, settingsVisible) = visibility
+    ) { setupComplete, apps, terminalVisible, query, extras ->
         @Suppress("UNCHECKED_CAST")
         val selectedIndex = extras[0] as Int
         @Suppress("UNCHECKED_CAST")
@@ -226,19 +172,8 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
 
         val clampedIndex = if (results.isEmpty()) 0 else selectedIndex.coerceIn(0, results.size - 1)
 
-        // Calculate screen time months
-        val livedMonths = if (birthDate != null) {
-            val cal = java.util.Calendar.getInstance()
-            ((cal.get(java.util.Calendar.YEAR) - birthDate.year) * 12 +
-             (cal.get(java.util.Calendar.MONTH) + 1 - birthDate.month)).coerceIn(0, 960)
-        } else 0
-        val remaining = 960 - livedMonths
-        val stMonths = usageTracker.screenTimeMonths(remaining)
-
         LauncherState(
             screen = if (setupComplete) Screen.HOME else Screen.SETUP,
-            birthYear = birthDate?.year,
-            birthMonth = birthDate?.month,
             terminalVisible = terminalVisible,
             searchQuery = query,
             searchResults = results,
@@ -247,20 +182,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
             isCommandMode = commandMode,
             history = history,
             currentPath = commandProcessor.currentPath,
-            showAppPicker = showPicker,
-            settingsVisible = settingsVisible,
-            screenTimeMonths = stMonths,
-            swipeDownLabel = null
-        )
-    }.combine(
-        combine(preferencesStore.swipeDownApp, preferencesStore.wallpaperConfig) { down, wp ->
-            down to wp
-        }
-    ) { state, extras ->
-        state.copy(
-            swipeDownLabel = extras.first?.label,
-            wallpaperHome = extras.second.home,
-            wallpaperLock = extras.second.lock
+            showAppPicker = showPicker
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), LauncherState())
 
@@ -269,78 +191,11 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         appRepository.stop()
     }
 
-    fun saveBirthDate(year: Int, month: Int) {
-        viewModelScope.launch {
-            preferencesStore.saveBirthDate(year, month)
-            // Set wallpaper in background
-            launch(Dispatchers.IO) {
-                val cal = java.util.Calendar.getInstance()
-                val lived = ((cal.get(java.util.Calendar.YEAR) - year) * 12 +
-                    (cal.get(java.util.Calendar.MONTH) + 1 - month)).coerceIn(0, 960)
-                val st = usageTracker.screenTimeMonths(960 - lived)
-                val cfg = preferencesStore.wallpaperConfigCurrent()
-                wallpaperGenerator.generateAndSetWallpaper(year, month, st, cfg.home, cfg.lock)
-            }
-            scheduleWallpaperUpdate()
-        }
-    }
-
-    private fun scheduleWallpaperUpdate() {
-        val request = PeriodicWorkRequestBuilder<WallpaperUpdateWorker>(
-            30, java.util.concurrent.TimeUnit.DAYS
-        ).build()
-        WorkManager.getInstance(getApplication()).enqueueUniquePeriodicWork(
-            "wallpaper_update",
-            ExistingPeriodicWorkPolicy.KEEP,
-            request
-        )
-    }
-
-    fun updateWallpaperNow() {
-        viewModelScope.launch(Dispatchers.IO) {
-            val bd = preferencesStore.birthDate.first() ?: return@launch
-            val cal = java.util.Calendar.getInstance()
-            val lived = ((cal.get(java.util.Calendar.YEAR) - bd.year) * 12 +
-                (cal.get(java.util.Calendar.MONTH) + 1 - bd.month)).coerceIn(0, 960)
-            val stMonths = usageTracker.screenTimeMonths(960 - lived)
-            val cfg = preferencesStore.wallpaperConfigCurrent()
-            val media = com.terminallauncher.data.MediaState.nowPlaying.value
-            val hasMedia = media.title.isNotEmpty()
-            wallpaperGenerator.generateAndSetWallpaper(bd.year, bd.month, stMonths, cfg.home, cfg.lock,
-                dynamicAccent = if (hasMedia) media.colors.accent else null,
-                dynamicLight = if (hasMedia) media.colors.accentLight else null,
-                dynamicMuted = if (hasMedia) media.colors.muted else null)
-        }
-    }
-
-    fun setWallpaperConfig(home: Boolean, lock: Boolean) {
-        viewModelScope.launch {
-            preferencesStore.setWallpaperConfig(home, lock)
-            updateWallpaperNow()
-        }
-    }
-
     fun completeSetup() {
         viewModelScope.launch {
             preferencesStore.completeSetup()
             refreshScreenTime()
         }
-    }
-
-    fun showTerminal() {
-        refreshScreenTime()
-        _terminalVisible.value = true
-        _searchQuery.value = ""
-        _selectedIndex.value = 0
-        _isCommandMode.value = false
-    }
-
-    fun hideTerminal() {
-        _terminalVisible.value = false
-        _searchQuery.value = ""
-        _selectedIndex.value = 0
-        _isCommandMode.value = false
-        _history.value = emptyList()
     }
 
     fun updateQuery(query: String) {
@@ -436,29 +291,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
                 "down" -> preferencesStore.saveSwipeDownApp(app.packageName, app.activityName, app.label)
             }
             _showAppPicker.value = null
-            _terminalVisible.value = false
-        }
-    }
-
-    fun showSettings() {
-        _settingsVisible.value = true
-    }
-
-    fun hideSettings() {
-        _settingsVisible.value = false
-    }
-
-    fun goToSetup() {
-        viewModelScope.launch {
-            // Re-enter setup to change birth date
-            preferencesStore.resetSetup()
-        }
-    }
-
-    fun resetAll() {
-        viewModelScope.launch {
-            preferencesStore.resetAll()
-            _settingsVisible.value = false
+            _searchQuery.value = ""
         }
     }
 
@@ -470,7 +303,9 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED
             }
             getApplication<Application>().startActivity(intent)
-            hideTerminal()
+            _searchQuery.value = ""
+            _selectedIndex.value = 0
+            _isCommandMode.value = false
             true
         } catch (_: Exception) {
             false
