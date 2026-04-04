@@ -28,7 +28,7 @@ class CommandProcessor(private val context: Context) {
 
     val currentPath: String get() = currentDir.absolutePath
 
-    private val commands = setOf("cd", "mkdir", "ls", "list", "install", "pwd", "rm", "touch", "cat", "shortcut", "help", "info", "uninstall", "clear")
+    private val commands = setOf("cd", "mkdir", "ls", "list", "install", "pwd", "rm", "touch", "cat", "shortcut", "help", "info", "uninstall", "clear", "mus")
 
     fun isCommand(input: String): Boolean {
         val trimmed = input.trim()
@@ -66,6 +66,7 @@ class CommandProcessor(private val context: Context) {
             "info" -> appInfo(arg)
             "uninstall" -> uninstall(arg)
             "clear" -> CommandResult(emptyList()) // handled by ViewModel
+            "mus" -> { onMusicPlayer?.invoke(); CommandResult(emptyList()) }
             "help" -> help()
             else -> CommandResult(listOf(TerminalOutput.Error("unknown command: $cmd")))
         }
@@ -86,6 +87,7 @@ class CommandProcessor(private val context: Context) {
         TerminalOutput.TextLine("  shortcut down   set swipe down app"),
         TerminalOutput.TextLine("  info <app>      app settings page"),
         TerminalOutput.TextLine("  uninstall <app> uninstall app"),
+        TerminalOutput.TextLine("  mus             music player"),
         TerminalOutput.TextLine("  clear           clear terminal"),
         TerminalOutput.TextLine("  , <query>       google search"),
         TerminalOutput.TextLine("  help            show this"),
@@ -96,6 +98,7 @@ class CommandProcessor(private val context: Context) {
 
     // Uninstall resolver — set by ViewModel
     var onUninstall: ((query: String) -> Unit)? = null
+    var onMusicPlayer: (() -> Unit)? = null
 
     private fun appInfo(query: String): CommandResult {
         if (query.isEmpty()) return CommandResult(listOf(TerminalOutput.Error("info: specify an app name")))

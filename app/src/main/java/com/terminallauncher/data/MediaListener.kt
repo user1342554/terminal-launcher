@@ -61,7 +61,7 @@ object MediaState {
             if (controllers.isNotEmpty()) {
                 val controller = controllers[0]
                 activeController = controller
-                controller.registerCallback(callback)
+                controller.registerCallback(callback, android.os.Handler(android.os.Looper.getMainLooper()))
 
                 val metadata = controller.metadata
                 val state = controller.playbackState

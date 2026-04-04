@@ -80,6 +80,10 @@ class LauncherActivity : ComponentActivity() {
                                 } else {
                                     viewModel.launchAtIndex(index)
                                 }
+                            },
+                            onCloseMusicPlayer = {
+                                viewModel.hideMusicPlayer()
+                                forceShowKeyboard()
                             }
                         )
                     }
@@ -101,6 +105,9 @@ class LauncherActivity : ComponentActivity() {
 
     @Deprecated("Use OnBackPressedDispatcher")
     override fun onBackPressed() {
-        // Terminal is always visible — back does nothing
+        if (viewModel.state.value.musicPlayerVisible) {
+            viewModel.hideMusicPlayer()
+            forceShowKeyboard()
+        }
     }
 }

@@ -39,7 +39,8 @@ data class LauncherState(
     val isCommandMode: Boolean = false,
     val history: List<HistoryEntry> = emptyList(),
     val currentPath: String = "",
-    val showAppPicker: String? = null
+    val showAppPicker: String? = null,
+    val musicPlayerVisible: Boolean = false
 )
 
 class LauncherViewModel(application: Application) : AndroidViewModel(application) {
@@ -57,10 +58,19 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     private val _history = MutableStateFlow<List<HistoryEntry>>(emptyList())
     private val _isCommandMode = MutableStateFlow(false)
     private val _showAppPicker = MutableStateFlow<String?>(null)
+    private val _musicPlayerVisible = MutableStateFlow(false)
 
     init {
         appRepository.start()
         refreshScreenTime()
+
+        // Keep media state fresh for music player
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            while (true) {
+                com.terminallauncher.data.MediaState.refresh(getApplication())
+                kotlinx.coroutines.delay(2000)
+            }
+        }
 
         // Wire shortcut command to save the app
         commandProcessor.onShortcutChange = { direction, query ->
@@ -115,6 +125,8 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         }
 
         // Wire uninstall command
+        commandProcessor.onMusicPlayer = { showMusicPlayer() }
+
         commandProcessor.onUninstall = { query ->
             viewModelScope.launch {
                 val apps = appRepository.apps.value
@@ -150,12 +162,13 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     val state: StateFlow<LauncherState> = combine(
         preferencesStore.setupComplete,
         appRepository.apps,
-        _terminalVisible,
+        combine(_terminalVisible, _musicPlayerVisible) { tv, mp -> tv to mp },
         _searchQuery,
         combine(_selectedIndex, _screenTime, _history, _isCommandMode, _showAppPicker) { idx, st, hist, cmd, picker ->
             listOf(idx, st, hist, cmd, picker)
         }
-    ) { setupComplete, apps, terminalVisible, query, extras ->
+    ) { setupComplete, apps, visibility, query, extras ->
+        val (terminalVisible, musicPlayerVisible) = visibility
         @Suppress("UNCHECKED_CAST")
         val selectedIndex = extras[0] as Int
         @Suppress("UNCHECKED_CAST")
@@ -182,7 +195,8 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
             isCommandMode = commandMode,
             history = history,
             currentPath = commandProcessor.currentPath,
-            showAppPicker = showPicker
+            showAppPicker = showPicker,
+            musicPlayerVisible = musicPlayerVisible
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), LauncherState())
 
@@ -260,6 +274,14 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
 
     fun requestUsagePermission() {
         usageTracker.openPermissionSettings()
+    }
+
+    fun showMusicPlayer() {
+        _musicPlayerVisible.value = true
+    }
+
+    fun hideMusicPlayer() {
+        _musicPlayerVisible.value = false
     }
 
     fun clearHistory() {
